@@ -29,7 +29,7 @@ import {getAuth,signInAnonymously,signInWithEmailAndPassword,onAuthStateChanged,
 import {getFirestore,collection,doc,setDoc,addDoc,updateDoc,deleteDoc,getDoc,onSnapshot,writeBatch,runTransaction,getDocs,query,where} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // 1) PEGÁ ACÁ LA CONFIG DE TU PROYECTO FIREBASE
-const firebaseConfig={apiKey:"",authDomain:"",projectId:"",appId:""};
+const firebaseConfig={apiKey:"AIzaSyD1te6RssbCBSrtpNisansqa-fGjwQBrxM",authDomain:"timming-fad72.firebaseapp.com",projectId:"timming-fad72",storageBucket:"timming-fad72.firebasestorage.app",messagingSenderId:"376144224070",appId:"1:376144224070:web:62c2813a34fe29f4e70f47"};
 
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
 const $=s=>document.querySelector(s);
