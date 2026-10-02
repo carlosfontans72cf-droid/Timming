@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eventos</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f4f4f6;color:#222}
+.box{max-width:340px;margin:10vh auto;padding:20px;background:#fff;border-radius:12px;display:grid;gap:8px}
+input,select,button,textarea{font:inherit;padding:8px;border:1px solid #ccc;border-radius:8px;min-width:0}
+button{background:#222;color:#fff;border:0;cursor:pointer}
+.top{display:flex;gap:8px;padding:10px;background:#fff;flex-wrap:wrap;align-items:center}
+.big{font-size:1.2em;font-weight:700;flex:1}
+.tabs{display:flex;gap:6px;padding:8px}.tabs button{background:#ddd;color:#222}.tabs .on{background:#222;color:#fff}
+.row{display:flex;gap:6px;padding:6px 10px;align-items:center;flex-wrap:wrap}.row input:nth-child(3){flex:2}.row input{flex:1}
+.r{background:#fff;margin:4px 10px;border-radius:8px}.r small{color:#666;margin-left:auto}.done{opacity:.4;text-decoration:line-through}
+.card{background:#fff;margin:6px 10px;padding:14px;border-radius:10px;display:flex;justify-content:space-between;font-size:1.2em}.mesa{font-weight:700;color:#c0392b}
+#banner:not(:empty){background:#e67e22;color:#fff;padding:14px;font-size:1.3em;font-weight:700}
+#next{padding:6px 12px;background:#e8f4ea}
+.in{background:#d4efdf}.off{background:#ddd;color:#222}.chk{font-size:.7em;background:#222;color:#fff;border-radius:8px;padding:6px 10px;margin-left:8px}
+.sticky{position:sticky;top:0;background:#f4f4f6;padding-bottom:4px;z-index:5}#cnt{font-weight:700;font-size:1.1em;padding:6px 10px}
+.part{background:#fcf3cf}.red{background:#c0392b}
+#modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:50}
+.mc{background:#fff;border-radius:14px;padding:18px;width:min(92vw,380px);text-align:center;display:grid;gap:8px}
+.warn{background:#c0392b;color:#fff;padding:10px;border-radius:8px;font-weight:700}
+#scn{position:fixed;inset:0;background:#000;z-index:60}#scn video{width:100%;height:100%;object-fit:cover}#scn button{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);font-size:1.1em}
+section{padding:0 10px 30px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {getAuth,signInAnonymously,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import {getFirestore,collection,doc,setDoc,addDoc,updateDoc,deleteDoc,getDoc,onSnapshot,writeBatch,runTransaction} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ==================================================
+// CONFIGURACIÓN COMPLETA — LISTA PARA USAR
+// ==================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyD1te6RssbCBSrtpNisansqa-fGjwQBrxM",
+  authDomain: "timming-fad72.firebaseapp.com",
+  projectId: "timming-fad72",
+  storageBucket: "timming-fad72.firebasestorage.app",
+  messagingSenderId: "376144224070",
+  appId: "1:376144224070:web:62c2813a34fe29f4e70f47"
+};
+// ==================================================
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $ = s => document.querySelector(s);
+const S = window.S = {
+  tab: 'plan', f: 'all', items: [], guests: [], codes: [], events: [], unsubs: [],
+  fired: new Set(), q: '', eid: null, ev: null, owner: false, role: null, name: '', joining: false, edit: false, m: null
+};
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const canEdit = () => S.owner || S.role === 'A';
+const evDoc = () => doc(db, 'events', S.eid);
+const colE = c => collection(db, 'events', S.eid, c);
+
+const clean = () => {
+  S.unsubs.forEach(f => f());
+  S.unsubs = [];
+  S.ev = null;
+  S.items = [];
+  S.guests = [];
+  S.codes = [];
+  S.alert = '';
+};
+
+onAuthStateChanged(auth, async u => {
+  if (S.joining) return;
+  S.owner = false;
+  S.role = null;
+  if (!u) return login();
+  if (!u.isAnonymous) {
+    S.owner = (await getDoc(doc(db, 'owners', u.uid))).exists();
+    if (S.owner) {
+      S.name = 'Dueño';
+      return listEvents();
+    }
+  }
+  const eid = localStorage.eid;
+  if (eid) {
+    try {
+      const m = await getDoc(doc(db, 'events', eid, 'members', u.uid));
+      if (m.exists()) {
+        S.role = m.data().role;
+        S.name = m.data().name || 'Sin nombre';
+        return openEvent(eid);
+      }
+    } catch (e) {}
+  }
+  login();
+});
+
+function login() {
+  const c = new URLSearchParams(location.search).get('c') || '';
+  $('#app').innerHTML = `
+    <div class="box">
+      <h2>Eventos</h2>
+      <input id="code" placeholder="Código de acceso" value="${esc(c)}">
+      <input id="nm" placeholder="Tu nombre (ej. Ana)" value="${esc(localStorage.nm || '')}">
+      <button onclick="joinCode()">Entrar</button>
+      <hr>
+      <small>Dueño</small>
+      <input id="em" placeholder="Email">
+      <input id="pw" type="password" placeholder="Contraseña">
+      <button onclick="ownerLogin()">Entrar como dueño</button>
+      <p id="err"></p>
+    </div>`;
+}
+
+window.ownerLogin = async () => {
+  try {
+    await signInWithEmailAndPassword(auth, $('#em').value, $('#pw').value);
+  } catch (e) {
+    $('#err').textContent = 'Datos incorrectos';
+  }
+};
+
+window.joinCode = async () => {
+  const code = $('#code').value.trim();
+  const [eid, role] = code.split('_');
+  S.name = $('#nm').value.trim() || 'Sin nombre';
+  localStorage.nm = S.name;
+  try {
+    S.joining = true;
+    if (!auth.currentUser) await signInAnonymously(auth);
+    const u = auth.currentUser;
+    await setDoc(doc(db, 'events', eid, 'members', u.uid), {
+      code, role, name: S.name
+    });
+    localStorage.eid = eid;
+    S.joining = false;
+    S.owner = false;
+    S.role = role;
+    openEvent(eid);
+  } catch (e) {
+    S.joining = false;
+    $('#err').textContent = 'Código inválido';
+  }
+};
+
+window.back = async () => {
+  if (S.owner) return listEvents();
+  localStorage.removeItem('eid');
+  await signOut(auth);
+};
+
+function listEvents() {
+  clean();
+  S.eid = null;
+  S.unsubs.push(onSnapshot(collection(db, 'events'), s => {
+    S.events = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    drawList();
+  }));
+}
+
+function drawList() {
+  $('#app').innerHTML = `
+    <div class="top">
+      <span class="big">Mis eventos</span>
+      <button onclick="signOutAll()">Salir</button>
+    </div>
+    <section>
+      <div class="row">
+        <input id="en" placeholder="Nombre del evento">
+        <input id="ed" type="date">
+        <button onclick="newEv()">Crear</button>
+      </div>
+      ${S.events.map(e => `
+        <div class="card" onclick="openEvent('${e.id}')">
+          <span>${esc(e.name)}</span>
+          <small>${esc(e.date)}</small>
+        </div>`).join('')}
+    </section>`;
+}
+
+window.signOutAll = () => signOut(auth);
+
+window.newEv = () => {
+  const n = $('#en').value.trim();
+  if (n) addDoc(collection(db, 'events'), {
+    name: n,
+    date: $('#ed').value,
+    alerts: [10, 5, 0]
+  });
+};
+
+window.openEvent = eid => {
+  clean();
+  S.eid = eid;
+  S.tab = 'plan';
+  S.unsubs.push(onSnapshot(evDoc(), s => { S.ev = s.data(); draw(); }));
+  S.unsubs.push(onSnapshot(colE('items'), s => { S.items = s.docs.map(d => ({ id: d.id, ...d.data() })); draw(); }));
+  S.unsubs.push(onSnapshot(colE('guests'), s => { S.guests = s.docs.map(d => ({ id: d.id, ...d.data() })); draw(); }));
+  if (S.owner) {
+    S.unsubs.push(onSnapshot(colE('codes'), s => { S.codes = s.docs.map(d => ({ id: d.id, ...d.data() })); draw(); }));
+  }
+};
+
+const ts = i => {
+  const t = i.time || '00:00';
+  return +new Date(S.ev.date + 'T' + t) + (t < '06:00' ? 86400000 : 0);
+};
+
+window.u = (c, id, f, v) => updateDoc(doc(db, 'events', S.eid, c, id), { [f]: v });
+window.del = (c, id) => confirm('¿Borrar?') && deleteDoc(doc(db, 'events', S.eid, c, id));
+window.setEv = (f, v) => updateDoc(evDoc(), { [f]: v });
+window.setAlerts = v => setEv('alerts', v.split(',').map(x => parseInt(x)).filter(x => x >= 0));
+window.addItem = () => addDoc(colE('items'), { time: '12:00', action: 'Nuevo momento', resp: '', notes: '', done: false });
+window.addGuest = () => addDoc(colE('guests'), { name: 'Nuevo invitado', table: '', notes: '', pax: 1, inCount: 0 });
+window.tab = t => { S.tab = t; draw(true); };
+window.clearAlert = () => { S.alert = ''; $('#banner').textContent = ''; };
+
+function draw(force) {
+  if (!S.ev) return;
+  if (!force && S.tab === 'g' && !S.edit && $('#gl')) { drawG(); return; }
+  if (!force && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+    S.dirty = 1; return;
+  }
+  const ev = S.ev;
+  const e = canEdit();
+  const items = [...S.items].sort((a, b) => ts(a) - ts(b));
+
+  let h = `
+    <div class="top">
+      <button onclick="back()">${S.owner ? '← Eventos' : 'Salir'}</button>
+      ${e ? `
+        <input class="big" value="${esc(ev.name)}" onchange="setEv('name', this.value)">
+        <input type="date" value="${ev.date || ''}" onchange="setEv('date', this.value)">
+      ` : `<span class="big">${esc(ev.name)}</span>`}
+    </div>
+    <div id="banner" onclick="clearAlert()">${esc(S.alert || '')}</div>
+    <div id="next"></div>
+    <div class="tabs">
+      <button class="${S.tab === 'plan' ? 'on' : ''}" onclick="tab('plan')">Cronograma</button>
+      <button class="${S.tab === 'g' ? 'on' : ''}" onclick="tab('g')">Invitados ${cnt().join('/')}</button>
+      ${S.owner ? `<button class="${S.tab === 'acc' ? 'on' : ''}" onclick="tab('acc')">Accesos</button>` : ''}
+    </div>
+    <section>`;
+
+  if (S.tab === 'plan') {
+    if (e) h += `
+      <div class="row">
+        <button onclick="addItem()">+ Momento</button>
+        <small>Avisos (min antes):</small>
+        <input style="max-width:90px" value="${(ev.alerts || [10, 5, 0]).join(',')}" onchange="setAlerts(this.value)">
+      </div>`;
+    h += items.map(i => e ? `
+      <div class="row">
+        <input type="checkbox" style="flex:0" ${i.done ? 'checked' : ''} onchange="u('items','${i.id}','done',this.checked)">
+        <input type="time" value="${i.time || ''}" onchange="u('items','${i.id}','time',this.value)">
+        <input value="${esc(i.action)}" onchange="u('items','${i.id}','action',this.value)">
+        <input placeholder="Responsable" value="${esc(i.resp)}" onchange="u('items','${i.id}','resp',this.value)">
+        <input placeholder="Notas" value="${esc(i.notes)}" onchange="u('items','${i.id}','notes',this.value)">
+        <button onclick="del('items','${i.id}')">✕</button>
+      </div>` : `
+      <div class="row r ${i.done ? 'done' : ''}">
+        <b>${esc(i.time)}</b> ${esc(i.action)}
+        <small>${esc(i.resp)} ${esc(i.notes)}</small>
+      </div>`).join('');
+  }
+
+  if (S.tab === 'g') {
+    h += `
+      <div class="sticky">
+        <div id="cnt"></div>
+        <div class="row">
+          <input id="q" autofocus placeholder="Buscar nombre o mesa..." value="${esc(S.q)}" 
+            oninput="S.q=this.value;drawG()" 
+            onkeydown="if(event.key==='Enter')enterCode(this.value)" 
+            style="font-size:1.3em;flex:3">
+          <button onclick="S.q='';draw(true);document.querySelector('#q').focus()">✕</button>
+        </div>
+        <div class="row">
+          ${[['all','Todos'],['pend','Pendientes'],['in','Llegaron']].map(([k,t]) => 
+            `<button class="${S.f === k ? '' : 'off'}" onclick="S.f='${k}';draw(true)">${t}</button>`
+          ).join('')}
+          <button onclick="scan()">📷 QR</button>
+          ${e ? `<button class="${S.edit ? '' : 'off'}" onclick="S.edit=!S.edit;draw(true)">
+            ${S.edit ? 'Terminar edición' : 'Editar lista'}</button>` : ''}
+        </div>
+      </div>`;
+    if (e && S.edit) h += `
+      <div class="row">
+        <button onclick="addGuest()">+ Invitado</button>
+        <button onclick="expCsv()">Exportar códigos</button>
+        <input type="file" accept=".xlsx,.xls,.csv" onchange="impFile(this.files[0])">
+      </div>
+      <div class="row">
+        <textarea id="paste" rows="2" style="flex:1" placeholder="Pegá acá la lista (una línea por invitado: Nombre ; Mesa)"></textarea>
+        <button onclick="impText()">Importar</button>
+      </div>`;
+    h += `<div id="gl"></div>`;
+  }
+
+  if (S.tab === 'acc') {
+    h += `
+      <div class="row">
+        <input id="lb" placeholder="Nombre de la persona">
+        <select id="rl">
+          <option value="S">Funcionario (solo ve)</option>
+          <option value="A">Admin (edita)</option>
+        </select>
+        <button onclick="mk()">Crear código</button>
+      </div>`;
+    h += S.codes.map(c => `
+      <div class="card">
+        <span>${esc(c.label)} · ${c.role === 'A' ? 'Admin' : 'Funcionario'}</span>
+        <span>
+          <a href="https://wa.me/?text=${encodeURIComponent(ev.name + ' — entrá acá: ' + location.origin + '/?c=' + c.id)}" target="_blank">WhatsApp</a>
+          <button onclick="del('codes','${c.id}')">✕</button>
+        </span>
+      </div>`).join('');
+  }
+
+  $('#app').innerHTML = h + '</section>';
+  if (S.tab === 'g') drawG();
+  drawNext();
+}
+
+document.addEventListener('focusout', () => {
+  if (S.dirty) {
+    S.dirty = 0;
+    setTimeout(() => draw(), 80);
+  }
+});
+
+window.mk = () => {
+  const role = $('#rl').value;
+  const code = `${S.eid}_${role}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+  setDoc(doc(db, 'events', S.eid, 'codes', code), {
+    role,
+    label: $('#lb').value || 'Sin nombre'
+  });
+};
+
+const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+window.drawG = () => {
+  const q = norm(S.q);
+  const e = canEdit() && S.edit;
+  const el = $('#gl');
+  if (!el) return;
+  updCount();
+  const cn = {};
+  S.dups = new Set();
+  S.guests.forEach(x => {
+    const k = norm(x.name);
+    if (cn[k]) S.dups.add(k);
+    cn[k] = 1;
+  });
+  if (S.m) showM();
+  if (!e && !q && S.f === 'all') {
+    const r = S.guests.filter(x => (x.inCount || 0) > 0)
+      .sort((a, b) => b.arrivedAt - a.arrivedAt).slice(0, 8);
+    el.innerHTML = '<p>Escribí un nombre o mesa para buscar</p>' + 
+      (r.length ? '<small>Últimos en llegar</small>' : '') + r.map(cardG).join('');
+    return;
+  }
+  const tk = q.split(/\s+/).filter(Boolean);
+  const g = S.guests.filter(x => 
+    (S.f === 'all' || (S.f === 'in' ? (x.inCount || 0) > 0 : (x.inCount || 0) < (x.pax || 1))) &&
+    tk.every(t => norm(x.name + ' mesa ' + x.table).includes(t))
+  ).sort((a, b) => norm(a.name) < norm(b.name) ? -1 : 1);
+  
+  el.innerHTML = `<small>${g.length} invitados</small>` + g.slice(0, 100).map(x => e ? `
+    <div class="row">
+      <input value="${esc(x.name)}" onchange="u('guests','${x.id}','name',this.value)">
+      <input style="max-width:80px" placeholder="Mesa" value="${esc(x.table)}" onchange="u('guests','${x.id}','table',this.value)">
+      <input type="number" min="1" style="max-width:60px" title="Personas" value="${x.pax || 1}" onchange="u('guests','${x.id}','pax',parseInt(this.value)||1)">
+      <input placeholder="Notas" value="${esc(x.notes)}" onchange="u('guests','${x.id}','notes',this.value)">
+      <button onclick="del('guests','${x.id}')">✕</button>
+    </div>` : cardG(x)).join('');
+};
+
+const cardG = x => {
+  const p = x.pax || 1, c = x.inCount || 0;
+  return `<div class="card ${c >= p ? 'in' : c ? 'part' : ''}" onclick="hG('${x.id}')">
+    <span>
+      <b>${esc(x.name)}</b>${S.dups?.has(norm(x.name)) ? ' ⚠ nombre repetido' : ''}<br>
+      <small>${p > 1 ? p + ' personas · ' : ''}${esc(x.notes)}</small>
+    </span>
+    <span>
+      <span class="mesa">Mesa ${esc(x.table) || '—'}</span>
+      <span class="chk">${c ? `✔ ${c}/${p}` : 'Marcar'}</span>
+    </span>
+  </div>`;
+};
+
+const cnt = () => [
+  S.guests.reduce((s, x) => s + (x.inCount || 0), 0),
+  S.guests.reduce((s, x) => s + (x.pax || 1), 0)
+];
+
+const gRef = id => doc(db, 'events', S.eid, 'guests', id);
+window.hG = (id, scan) => {
+  const x = S.guests.find(g => g.id === id);
+  if (!x) return;
+  const c = x.inCount || 0, p = x.pax || 1;
+  if (p === 1 && !c && !scan) return go(id, 1);
+  S.m = { id, n: c || p, scan: !!scan };
+  showM();
+};
+
+window.go = async (id, n) => {
+  try {
+    const dup = await runTransaction(db, async t => {
+      const s = await t.get(gRef(id));
+      const d = s.data();
+      if ((d.inCount || 0) > 0) return true;
+      t.update(gRef(id), {
+        inCount: n,
+        arrivedAt: Date.now(),
+        arrivedBy: S.name
+      });
+      return false;
+    });
+    if (dup) {
+      S.m = S.m || { id, n, scan: false };
+      S.m.id = id;
+      showM();
+      beep();
+    } else {
+      const sc = S.m?.scan;
+      closeM();
+      if (sc) scan();
+    }
+  } catch (e) {
+    alert('Error: sin conexión o sin permiso');
+  }
+};
+
+window.setN = async (id, n) => {
+  if (n === 0 && !confirm('¿Marcar como NO llegó?')) return;
+  await updateDoc(gRef(id), {
+    inCount: n,
+    arrivedAt: n ? Date.now() : null,
+    arrivedBy: n ? S.name : null
+  });
+  closeM();
+};
+
+window.closeM = () => { S.m = null; $('#modal')?.remove(); };
+
+window.showM = () => {
+  const m = S.m;
+  const x = S.guests.find(g => g.id === m.id);
+  if (!x) return closeM();
+  let d = $('#modal');
+  if (!d) {
+    d = document.createElement('div');
+    d.id = 'modal';
+    document.body.append(d);
+  }
+  const p = x.pax || 1, c = x.inCount || 0;
+  d.innerHTML = `
+    <div class="mc">
+      <h2>${esc(x.name)}</h2>
+      <div class="mesa" style="font-size:2em">Mesa ${esc(x.table) || '—'}</div>
+      <p>${p} persona(s) · ${esc(x.notes)}</p>
+      ${c ? `
+        <div class="warn">⚠ YA INGRESÓ: ${c} de ${p} · 
+          ${new Date(x.arrivedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} · 
+          ${esc(x.arrivedBy)}</div>` : ''}
+      <div class="row" style="justify-content:center">
+        <button onclick="S.m.n=Math.max(0,S.m.n-1);showM()">−</button>
+        <b style="font-size:2em">${m.n}</b>
+        <button onclick="S.m.n++;showM()">+</button>
+      </div>
+      ${c ? `
+        <button onclick="setN('${x.id}',S.m.n)">Guardar cantidad</button>
+        <button class="red" onclick="setN('${x.id}',0)">Marcar NO llegó (error)</button>` : `
+        <button onclick="go('${x.id}',S.m.n)">Confirmar llegada</button>`}
+      <button class="off" onclick="closeM()">Cerrar</button>
+    </div>`;
+};
+
+window.enterCode = v => {
+  v = v.trim();
+  const g = S.guests.find(x => (x.code && x.code === v) || x.id === v);
+  if (g) {
+    S.q = '';
+    draw(true);
+    hG(g.id, true);
+  }
+};
+
+window.stopScan = () => {
+  S.stream?.getTracks().forEach(t => t.stop());
+  $('#scn')?.remove();
+};
+
+window.scan = async () => {
+  closeM();
+  const d = document.createElement('div');
+  d.id = 'scn';
+  d.innerHTML = '<video playsinline muted></video><button onclick="stopScan()">Cerrar cámara</button>';
+  document.body.append(d);
+  const v = d.querySelector('video');
+  try {
+    S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (e) {
+    stopScan();
+    return alert('No se pudo abrir la cámara (permiso o falta de HTTPS)');
+  }
+  v.srcObject = S.stream;
+  await v.play();
+  const cv = document.createElement('canvas');
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  const tick = () => {
+    if (!$('#scn')) return;
+    if (v.videoWidth) {
+      const w = Math.min(640, v.videoWidth);
+      const h = Math.round(v.videoHeight * w / v.videoWidth);
+      cv.width = w;
+      cv.height = h;
+      cx.drawImage(v, 0, 0, w, h);
+      const im = cx.getImageData(0, 0, w, h);
+      const r = jsQR(im.data, w, h);
+      if (r && r.data) {
+        const k = r.data.trim();
+        const g = S.guests.find(x => (x.code && x.code === k) || x.id === k);
+        if (g) {
+          navigator.vibrate?.([200]);
+          stopScan();
+          return hG(g.id, true);
+        }
+        $('#scn button').textContent = 'QR no reconocido · tocar para cerrar';
+      }
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+};
+
+window.expCsv = () => {
+  const t = 'nombre;mesa;personas;codigo\n' + 
+    S.guests.map(x => [x.name, x.table, x.pax || 1, x.code || x.id].join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([t], { type: 'text/csv' }));
+  a.download = 'invitados-codigos.csv';
+  a.click();
+};
+
+const updCount = () => {
+  const [a, t] = cnt();
+  const c = $('#cnt');
+  if (c) c.textContent = `Llegaron ${a} de ${t} personas · Faltan ${t - a}`;
+  const b = document.querySelectorAll('.tabs button')[1];
+  if (b) b.textContent = `Invitados ${a}/${t}`;
+};
+
+window.impFile = async f => {
+  if (f) {
+    const wb = XLSX.read(await f.arrayBuffer());
+    impRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }));
+  }
+};
+
+window.impText = () => {
+  impRows($('#paste').value.split(/\r?\n/).map(l => l.split(/\t|;/).map(x => x.trim())));
+};
+
+async function impRows(r) {
+  r = r.filter(x => x && x[0]);
+  if (!r.length) return;
+  let n = 0, m = 1, nt = 2, p = -1, cd = -1;
+  const h = r[0].map(x => String(x).toLowerCase());
+  if (h.some(x => /nombre|name|invitado/.test(x))) {
+    n = h.findIndex(x => /nombre|name|invitado/.test(x));
+    m = h.findIndex(x => /mesa|table/.test(x));
+    nt = h.findIndex(x => /nota|menu|obs/.test(x));
+    p = h.findIndex(x => /pax|cantidad|personas|lugares/.test(x));
+    cd = h.findIndex(x => /codigo|código|qr|pulsera/.test(x));
+    r = r.slice(1);
+  }
+  for (let i = 0; i < r.length; i += 400) {
+    const b = writeBatch(db);
+    r.slice(i, i + 400).forEach(x => {
+      b.set(doc(colE('guests')), {
+        name: String(x[n] ?? '').replace(/^[\d.\-)\s•]+/, '').trim(),
+        table: m >= 0 ? String(x[m] ?? '').trim() : '',
+        notes: nt >= 0 ? String(x[nt] ?? '') : '',
+        pax: p >= 0 ? (parseInt(x[p]) || 1) : 1,
+        inCount: 0,
+        code: cd >= 0 ? String(x[cd] ?? '').trim() : ''
+      });
+    });
+    await b.commit();
+  }
+  alert(r.length + ' invitados cargados');
+}
+
+function beep() {
+  try {
+    const a = new AudioContext();
+    const o = a.createOscillator();
+    o.connect(a.destination);
+    o.start();
+    setTimeout(() => o.stop(), 400);
+  } catch {}
+  navigator.vibrate?.([300, 100, 300]);
+}
+
+function drawNext() {
+  const el = $('#next');
+  if (!el || !S.ev?.date) return;
+  const now = Date.now();
+  const n = [...S.items].filter(i => !i.done && ts(i) >= now - 60000)
+    .sort((a, b) => ts(a) - ts(b))[0];
+  el.textContent = n ? 
+    `Próximo: ${n.time} ${n.action} (en ${Math.max(0, Math.round((ts(n) - now) / 60000))} min)` : '';
+}
+
+setInterval(() => {
+  if (!S.ev?.date) return;
+  const now = Date.now();
+  (S.ev.alerts || [10, 5, 0]).forEach(m => {
+    S.items.forEach(i => {
+      if (i.done) return;
+      const k = i.id + m + i.time;
+      const t = ts(i) - m * 60000;
+      if (now >= t && now < t + 45000 && !S.fired.has(k)) {
+        S.fired.add(k);
+        S.alert = (m ? `En ${m} min: ` : 'AHORA: ') + i.action;
+        const b = $('#banner');
+        if (b) b.textContent = S.alert;
+        beep();
+      }
+    });
+  });
+  drawNext();
+}, 10000);
+</script>
+</body>
+</html>
