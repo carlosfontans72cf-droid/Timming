@@ -54,14 +54,15 @@ onAuthStateChanged(auth,async u=>{
 });
 
 function login(){
-  const c=new URLSearchParams(location.search).get('c')||'';
-  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><input id=code placeholder="Código de acceso" value="${esc(c)}"><input id=nm placeholder="Tu nombre (ej. Ana)" value="${esc(localStorage.nm||'')}"><button onclick="joinCode()">Entrar</button><hr><small>Dueño</small><input id=em placeholder=Email><input id=pw type=password placeholder=Contraseña><button onclick="ownerLogin()">Entrar como dueño</button><p id=err></p></div>`;
+  const c=(new URLSearchParams(location.search).get('c')||'').toLowerCase(),k=c.lastIndexOf('-'),u=k>0?c.slice(0,k).replace(/-/g,' '):'',d=k>0?c.slice(k+1):'';
+  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento, nombre y apellido</small><input id=code placeholder="boda prueba pancho marques" value="${esc(u)}"><small>Código de 6 dígitos</small><input id=pin inputmode=numeric maxlength=6 placeholder="123456" value="${esc(d)}"><button onclick="joinCode()">Entrar</button><hr><small>Dueño</small><input id=em placeholder=Email><input id=pw type=password placeholder=Contraseña><button onclick="ownerLogin()">Entrar como dueño</button><p id=err></p></div>`;
 }
+const sl=s=>norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 window.ownerLogin=async()=>{try{await signInWithEmailAndPassword(auth,$('#em').value,$('#pw').value)}catch(e){$('#err').textContent='Datos incorrectos'}};
 window.joinCode=async()=>{
-  const code=$('#code').value.trim().toLowerCase();let eid,role;S.name=$('#nm').value.trim()||'Sin nombre';localStorage.nm=S.name;
+  const code=sl($('#code').value)+'-'+$('#pin').value.replace(/\D/g,'');let eid,role;
   try{S.joining=true;if(!auth.currentUser)await signInAnonymously(auth);
-    const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;({eid,role}=j.data());await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name});
+    const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;({eid,role}=j.data());S.name=j.data().label||'Sin nombre';await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name});
     localStorage.eid=eid;S.joining=false;S.owner=false;S.role=role;openEvent(eid);
   }catch(e){S.joining=false;$('#err').textContent='Código inválido'}
 };
@@ -145,7 +146,7 @@ function render(){
   }
   if(S.tab=='acc'){
     h+=`<div class=row><input id=lb placeholder="Nombre"><input id=ap placeholder="Apellido"><select id=rl><option value=S>Funcionario (solo ve)</option><option value=A>Admin (edita)</option></select><button onclick="mk()">Crear código</button></div>`+
-    S.codes.map(c=>`<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}<br><small>${esc(c.id)}</small></span><span><a href="https://wa.me/?text=${encodeURIComponent(ev.name+' — entrá acá: '+location.origin+'/?c='+c.id+' (código: '+c.id+')')}" target=_blank>WhatsApp</a> <button onclick="delCode('${c.id}')">✕</button></span></div>`).join('');
+    S.codes.map(c=>`<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}<br><small>Usuario: ${esc(c.id.slice(0,c.id.lastIndexOf('-')).replace(/-/g,' '))} · Código: <b>${esc(c.id.slice(c.id.lastIndexOf('-')+1))}</b></small></span><span><a href="https://wa.me/?text=${encodeURIComponent('*'+ev.name+'*\nHola '+c.label+', este es tu acceso como '+(c.role=='A'?'admin':'funcionario')+':\n'+location.origin+'/?c='+c.id+'\n\nSi te lo piden:\nUsuario: '+c.id.slice(0,c.id.lastIndexOf('-')).replace(/-/g,' ')+'\nCódigo: '+c.id.slice(c.id.lastIndexOf('-')+1))}" target=_blank>WhatsApp</a> <button onclick="delCode('${c.id}')">✕</button></span></div>`).join('');
   }
   $('#app').innerHTML=h+'</section>';
   if(S.tab=='g')drawG();
@@ -158,7 +159,7 @@ window.mk=async()=>{
   if(!n)return alert('Poné el nombre de la persona');
   const role=$('#rl').value,code=[sl(S.ev.name).slice(0,20).replace(/-$/,''),sl(n),sl(a),String(Math.floor(100000+Math.random()*900000))].filter(Boolean).join('-');
   await setDoc(doc(db,'events',S.eid,'codes',code),{role,label:(n+' '+a).trim()});
-  await setDoc(doc(db,'joins',code),{eid:S.eid,role});
+  await setDoc(doc(db,'joins',code),{eid:S.eid,role,label:(n+' '+a).trim()});
 };
 
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
