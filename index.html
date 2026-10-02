@@ -19,6 +19,9 @@ button{background:#222;color:#fff;border:0;cursor:pointer}
 .mc{background:#fff;border-radius:14px;padding:18px;width:min(92vw,380px);text-align:center;display:grid;gap:8px}
 .warn{background:#c0392b;color:#fff;padding:10px;border-radius:8px;font-weight:700}
 #scn{position:fixed;inset:0;background:#000;z-index:60}#scn video{width:100%;height:100%;object-fit:cover}#scn button{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);font-size:1.1em}
+#alr{position:fixed;inset:0;background:#c0392b;color:#fff;z-index:100;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:30px;text-align:center;padding:20px;animation:bl 1s infinite}
+#alr div{font-size:clamp(2rem,9vw,5rem);font-weight:800}#alr button{font-size:2rem;padding:16px 40px;background:#fff;color:#c0392b}
+@keyframes bl{50%{background:#8e2a20}}
 section{padding:0 10px 30px}
 </style></head><body><div id="app"></div>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -77,7 +80,7 @@ window.signOutAll=()=>signOut(auth);
 window.newEv=()=>{const n=$('#en').value.trim();if(n)addDoc(collection(db,'events'),{name:n,date:$('#ed').value,alerts:[10,5,0]})};
 
 window.openEvent=eid=>{
-  clean();S.eid=eid;S.tab='plan';S.plan='';S.q='';S.edit=false;S.f='all';S.alert='';closeM();
+  clean();S.eid=eid;S.tab='plan';S.plan='';S.q='';S.edit=false;S.f='all';S.alert='';closeM();wl();
   S.unsubs.push(onSnapshot(evDoc(),s=>{S.ev=s.data();draw()}));
   S.unsubs.push(onSnapshot(colE('items'),s=>{S.items=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
   S.unsubs.push(onSnapshot(colE('guests'),s=>{S.guests=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
@@ -91,7 +94,20 @@ window.del=(c,id)=>confirm('¿Borrar?')&&deleteDoc(doc(db,'events',S.eid,c,id));
 window.setEv=(f,v)=>updateDoc(evDoc(),{[f]:v});
 window.setAlerts=v=>setEv('alerts',v.split(',').map(x=>parseInt(x)).filter(x=>x>=0));
 window.addItem=()=>addDoc(colE('items'),{time:'12:00',action:'Nuevo momento',resp:'',notes:'',done:false,plan:S.plan});
-window.addGuest=()=>addDoc(colE('guests'),{name:'Nuevo invitado',table:'',notes:'',pax:1,inCount:0});
+const dk=x=>norm(x.name)+'|'+norm(x.det);
+window.addGuest=()=>{
+  const n=(prompt('Nombre y apellido')||'').trim();if(!n)return;
+  let det='';const dup=S.guests.find(g=>norm(g.name)==norm(n));
+  if(dup){det=(prompt(`Ya existe "${dup.name}"${dup.det?' ('+dup.det+')':''} en Mesa ${dup.table||'—'}. Escribí un detalle para diferenciarlo (ej. segundo apellido, parentesco):`)||'').trim();
+    if(!det)return alert('No se agregó: falta el detalle para diferenciarlo.');
+    if(S.guests.some(g=>dk(g)==norm(n)+'|'+norm(det)))return alert('Ese nombre con ese detalle ya existe.')}
+  addDoc(colE('guests'),{name:n,det,table:'',notes:'',pax:1,inCount:0});
+};
+window.ug=(id,f,v)=>{
+  const x=S.guests.find(g=>g.id==id),d=S.guests.find(g=>g.id!=id&&dk(g)==dk({...x,[f]:v}));
+  if(d){alert(`Ya existe "${d.name}${d.det?' · '+d.det:''}" (Mesa ${d.table||'—'}). Agregá un detalle para diferenciarlos (ej. segundo apellido, parentesco).`);return drawG()}
+  u('guests',id,f,v);
+};
 window.tab=t=>{S.tab=t;draw(true)};
 window.clearAlert=()=>{S.alert='';$('#banner').textContent=''};
 
@@ -149,13 +165,13 @@ const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLo
 window.drawG=()=>{
   const q=norm(S.q),e=canEdit()&&S.edit,el=$('#gl');if(!el)return;updCount();const cn={};S.dups=new Set();S.guests.forEach(x=>{const k=norm(x.name);if(cn[k])S.dups.add(k);cn[k]=1});if(S.m)showM();
   if(!e&&!q&&S.f=='all'){const r=S.guests.filter(x=>(x.inCount||0)>0).sort((a,b)=>b.arrivedAt-a.arrivedAt).slice(0,8);el.innerHTML='<p>Escribí un nombre o mesa para buscar</p>'+(r.length?'<small>Últimos en llegar</small>':'')+r.map(cardG).join('');return}
-  const tk=q.split(/\s+/).filter(Boolean);const g=S.guests.filter(x=>(S.f=='all'||(S.f=='in'?(x.inCount||0)>0:(x.inCount||0)<(x.pax||1)))&&tk.every(t=>norm(x.name+' mesa '+x.table).includes(t))).sort((a,b)=>norm(a.name)<norm(b.name)?-1:1);
-  el.innerHTML=`<small>${g.length} invitados</small>`+g.slice(0,100).map(x=>e?
-   `<div class=row><input value="${esc(x.name)}" onchange="u('guests','${x.id}','name',this.value)"><input style="max-width:80px" placeholder=Mesa value="${esc(x.table)}" onchange="u('guests','${x.id}','table',this.value)"><input type=number min=1 style="max-width:60px" title="Personas" value="${x.pax||1}" onchange="u('guests','${x.id}','pax',parseInt(this.value)||1)"><input placeholder=Notas value="${esc(x.notes)}" onchange="u('guests','${x.id}','notes',this.value)"><button onclick="del('guests','${x.id}')">✕</button></div>`
+  const tk=q.split(/\s+/).filter(Boolean);const g=S.guests.filter(x=>(S.f=='all'||(S.f=='in'?(x.inCount||0)>0:(x.inCount||0)<(x.pax||1)))&&tk.every(t=>norm(x.name+' '+(x.det||'')+' mesa '+x.table).includes(t))).sort((a,b)=>norm(a.name)<norm(b.name)?-1:1);
+  el.innerHTML=`<small>${g.length} invitados</small>`+(e&&S.guests.some(x=>!x.det&&S.dups.has(norm(x.name)))?'<div class=warn>⚠ Hay nombres repetidos sin detalle: agregales un detalle para diferenciarlos</div>':'')+g.slice(0,100).map(x=>e?
+   `<div class=row><input value="${esc(x.name)}" onchange="ug('${x.id}','name',this.value)"><input placeholder="Detalle" title="Para diferenciar a dos personas con el mismo nombre" style="max-width:110px" value="${esc(x.det)}" onchange="ug('${x.id}','det',this.value)"><input style="max-width:80px" placeholder=Mesa value="${esc(x.table)}" onchange="u('guests','${x.id}','table',this.value)"><input type=number min=1 style="max-width:60px" title="Personas" value="${x.pax||1}" onchange="u('guests','${x.id}','pax',parseInt(this.value)||1)"><input placeholder=Notas value="${esc(x.notes)}" onchange="u('guests','${x.id}','notes',this.value)"><button onclick="del('guests','${x.id}')">✕</button></div>`
    :cardG(x)).join('');
 };
 
-const cardG=x=>{const p=x.pax||1,c=x.inCount||0;return `<div class="card ${c>=p?'in':c?'part':''}" onclick="hG('${x.id}')"><span><b>${esc(x.name)}</b>${S.dups?.has(norm(x.name))?' ⚠ nombre repetido':''}<br><small>${p>1?p+' personas · ':''}${esc(x.notes)}</small></span><span><span class=mesa>Mesa ${esc(x.table)||'—'}</span><span class=chk>${c?`✔ ${c}/${p}`:'Marcar'}</span></span></div>`};
+const cardG=x=>{const p=x.pax||1,c=x.inCount||0;return `<div class="card ${c>=p?'in':c?'part':''}" onclick="hG('${x.id}')"><span><b>${esc(x.name)}</b>${x.det?` · ${esc(x.det)}`:''}${S.dups?.has(norm(x.name))&&!x.det?' ⚠ nombre repetido':''}<br><small>${p>1?p+' personas · ':''}${esc(x.notes)}</small></span><span><span class=mesa>Mesa ${esc(x.table)||'—'}</span><span class=chk>${c?`✔ ${c}/${p}`:'Marcar'}</span></span></div>`};
 const cnt=()=>[S.guests.reduce((s,x)=>s+(x.inCount||0),0),S.guests.reduce((s,x)=>s+(x.pax||1),0)];
 const gRef=id=>doc(db,'events',S.eid,'guests',id);
 window.hG=(id,scan)=>{const x=S.guests.find(g=>g.id==id);if(!x)return;const c=x.inCount||0,p=x.pax||1;if(p==1&&!c&&!scan)return go(id,1);S.m={id,n:c||p,scan:!!scan};showM()};
@@ -169,7 +185,7 @@ window.showM=()=>{
   const m=S.m,x=S.guests.find(g=>g.id==m.id);if(!x)return closeM();
   let d=$('#modal');if(!d){d=document.createElement('div');d.id='modal';document.body.append(d)}
   const p=x.pax||1,c=x.inCount||0;
-  d.innerHTML=`<div class=mc><h2>${esc(x.name)}</h2><div class=mesa style="font-size:2em">Mesa ${esc(x.table)||'—'}</div><p>${p} persona(s) · ${esc(x.notes)}</p>`+
+  d.innerHTML=`<div class=mc><h2>${esc(x.name)}${x.det?' · '+esc(x.det):''}</h2><div class=mesa style="font-size:2em">Mesa ${esc(x.table)||'—'}</div><p>${p} persona(s) · ${esc(x.notes)}</p>`+
   (c?`<div class=warn>⚠ YA INGRESÓ: ${c} de ${p} · ${new Date(x.arrivedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} · ${esc(x.arrivedBy)}</div>`:'')+
   `<div class=row style="justify-content:center"><button onclick="S.m.n=Math.max(0,S.m.n-1);showM()">−</button><b style="font-size:2em">${m.n}</b><button onclick="S.m.n++;showM()">+</button></div>`+
   (c?`<button onclick="setN('${x.id}',S.m.n)">Guardar cantidad</button><button class=red onclick="setN('${x.id}',0)">Marcar NO llegó (error)</button>`:`<button onclick="go('${x.id}',S.m.n)">Confirmar llegada</button>`)+
@@ -204,7 +220,7 @@ const evData=async eid=>{
 window.xlsEv=async eid=>{
   const {e,it,gs,pn}=await evData(eid),wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(it.map(i=>({Cronograma:pn[i.plan||'']||'General',Hora:i.time,Acción:i.action,Responsable:i.resp,Notas:i.notes,Hecho:i.done?'Sí':''}))),'Cronograma');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(gs.map(x=>({Nombre:x.name,Mesa:x.table,Personas:x.pax||1,Llegaron:x.inCount||0,'Hora llegada':x.arrivedAt?new Date(x.arrivedAt).toLocaleTimeString():'',Registró:x.arrivedBy||'',Notas:x.notes,Código:x.code||x.id}))),'Invitados');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(gs.map(x=>({Nombre:x.name,Detalle:x.det||'',Mesa:x.table,Personas:x.pax||1,Llegaron:x.inCount||0,'Hora llegada':x.arrivedAt?new Date(x.arrivedAt).toLocaleTimeString():'',Registró:x.arrivedBy||'',Notas:x.notes,Código:x.code||x.id}))),'Invitados');
   XLSX.writeFile(wb,(e.name||'evento')+'.xlsx');
 };
 window.waEv=async eid=>{
@@ -238,15 +254,23 @@ window.impFile=async f=>{if(f){const wb=XLSX.read(await f.arrayBuffer());impRows
 window.impText=()=>impRows($('#paste').value.split(/\r?\n/).map(l=>l.split(/\t|;/).map(x=>x.trim())));
 async function impRows(r){
   r=r.filter(x=>x&&x[0]);if(!r.length)return;
-  let n=0,m=1,nt=2,p=-1,cd=-1;const h=r[0].map(x=>String(x).toLowerCase());
-  if(h.some(x=>/nombre|name|invitado/.test(x))){n=h.findIndex(x=>/nombre|name|invitado/.test(x));m=h.findIndex(x=>/mesa|table/.test(x));nt=h.findIndex(x=>/nota|menu|obs/.test(x));p=h.findIndex(x=>/pax|cantidad|personas|lugares/.test(x));cd=h.findIndex(x=>/codigo|código|qr|pulsera/.test(x));r=r.slice(1)}
+  let n=0,m=1,nt=2,p=-1,cd=-1,dt=-1;const h=r[0].map(x=>String(x).toLowerCase());
+  if(h.some(x=>/nombre|name|invitado/.test(x))){n=h.findIndex(x=>/nombre|name|invitado/.test(x));m=h.findIndex(x=>/mesa|table/.test(x));nt=h.findIndex(x=>/nota|menu|obs/.test(x));p=h.findIndex(x=>/pax|cantidad|personas|lugares/.test(x));cd=h.findIndex(x=>/codigo|código|qr|pulsera/.test(x));dt=h.findIndex(x=>/detalle|diferenci|dni|parentesco/.test(x));r=r.slice(1)}
+  const seen=new Set(S.guests.map(dk)),skip=[];
+  r=r.filter(x=>{const nm=String(x[n]??'').replace(/^[\d.\-)\s•]+/,'').trim();if(!nm)return false;const k=norm(nm)+'|'+norm(dt>=0?x[dt]:'');if(seen.has(k)){skip.push(nm);return false}seen.add(k);return true});
+  window.skipped=skip;
   for(let i=0;i<r.length;i+=400){const b=writeBatch(db);
-    r.slice(i,i+400).forEach(x=>b.set(doc(colE('guests')),{name:String(x[n]??'').replace(/^[\d.\-)\s•]+/,'').trim(),table:m>=0?String(x[m]??'').trim():'',notes:nt>=0?String(x[nt]??''):'',pax:p>=0?(parseInt(x[p])||1):1,inCount:0,code:cd>=0?String(x[cd]??'').trim():''}));
+    r.slice(i,i+400).forEach(x=>b.set(doc(colE('guests')),{name:String(x[n]??'').replace(/^[\d.\-)\s•]+/,'').trim(),table:m>=0?String(x[m]??'').trim():'',notes:nt>=0?String(x[nt]??''):'',pax:p>=0?(parseInt(x[p])||1):1,inCount:0,det:dt>=0?String(x[dt]??'').trim():'',code:cd>=0?String(x[cd]??'').trim():''}));
     await b.commit();}
-  alert(r.length+' invitados cargados');
+  alert(r.length+' invitados cargados'+(skip.length?`\n${skip.length} repetidos omitidos (agregales un detalle y cargalos de nuevo):\n`+skip.slice(0,10).join(', '):''));
 }
 
-function beep(){try{const a=new AudioContext(),o=a.createOscillator();o.connect(a.destination);o.start();setTimeout(()=>o.stop(),400)}catch{}navigator.vibrate?.([300,100,300])}
+function beep(){try{S.ac=S.ac||new(window.AudioContext||window.webkitAudioContext)();S.ac.resume();const o=S.ac.createOscillator();o.type='square';o.frequency.value=880;o.connect(S.ac.destination);o.start();setTimeout(()=>o.stop(),500)}catch{}navigator.vibrate?.([400,150,400])}
+document.addEventListener('pointerdown',()=>{try{S.ac=S.ac||new(window.AudioContext||window.webkitAudioContext)();S.ac.resume()}catch{}});
+window.bigAlert=txt=>{$('#alr')?.remove();clearInterval(S.snd);const d=document.createElement('div');d.id='alr';d.innerHTML=`<div>${esc(txt)}</div><button onclick="stopAlert()">ENTENDIDO</button>`;document.body.append(d);beep();S.snd=setInterval(beep,2000)};
+window.stopAlert=()=>{clearInterval(S.snd);$('#alr')?.remove()};
+const wl=async()=>{try{S.wl=await navigator.wakeLock?.request('screen')}catch{}};
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState=='visible'&&S.eid)wl()});
 function drawNext(){
   const el=$('#next');if(!el||!S.ev?.date)return;
   const now=Date.now(),n=[...S.items].filter(i=>!i.done&&ts(i)>=now-6e4).sort((a,b)=>ts(a)-ts(b))[0];
@@ -256,7 +280,7 @@ setInterval(()=>{
   if(!S.ev?.date)return;const now=Date.now();
   (S.ev.alerts||[10,5,0]).forEach(m=>S.items.forEach(i=>{
     if(i.done)return;const k=i.id+m+i.time,t=ts(i)-m*6e4;
-    if(now>=t&&now<t+45e3&&!S.fired.has(k)){S.fired.add(k);S.alert=(m?`En ${m} min: `:'AHORA: ')+(i.plan?`[${S.plans.find(p=>p.id==i.plan)?.name||''}] `:'')+i.action;const b=$('#banner');if(b)b.textContent=S.alert;beep()}
+    if(now>=t&&now<t+45e3&&!S.fired.has(k)){S.fired.add(k);S.alert=(m?`En ${m} min: `:'AHORA: ')+(i.plan?`[${S.plans.find(p=>p.id==i.plan)?.name||''}] `:'')+i.action;const b=$('#banner');if(b)b.textContent=S.alert;bigAlert(S.alert)}
   }));drawNext();
 },10000);
 </script></body></html>
