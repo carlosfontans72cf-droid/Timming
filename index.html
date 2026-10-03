@@ -130,7 +130,12 @@ window.blkCode=async(id,v)=>{
   if(v)(await getDocs(query(colE('members'),where('code','==',id)))).forEach(d=>deleteDoc(d.ref));
 };
 window.blkAll=async v=>{if(!confirm(v?'¿Bloquear todos los accesos de este evento?':'¿Activar todos los accesos de este evento?'))return;for(const c of S.codes)await blkCode(c.id,v)};
-const waSend=t=>{const w=window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');if(!w){navigator.clipboard?.writeText(t);alert('Copié el mensaje. Pegalo en WhatsApp.')}};
+const waSend=t=>{
+  const u='https://wa.me/?text='+encodeURIComponent(t),w=window.open(u,'_blank');
+  if(w)return;
+  let d=document.querySelector('#modal');if(!d){d=document.createElement('div');d.id='modal';document.body.append(d)}
+  d.innerHTML=`<div class=mc><h3>Mensaje listo para enviar</h3><textarea id=wat rows=8 readonly>${esc(t)}</textarea><a href="${u}" target=_blank onclick="setTimeout(closeM,400)" style="background:#25d366;color:#fff;padding:12px;border-radius:8px;text-decoration:none;font-weight:700">Abrir WhatsApp</a><button onclick="document.querySelector('#wat').select();document.execCommand('copy')">Copiar mensaje</button><button class=off onclick="closeM()">Cerrar</button></div>`;
+};
 const supMsg=(nm,em,pw)=>`*Acceso de superadmin*\nHola ${nm}, este es tu acceso para ver y administrar los eventos:\n${location.origin}\n\nEmail: ${em}${pw?'\nContraseña: '+pw:''}\n\nEntrá en la parte "Dueño o superadmin" con el botón "Entrar con email".`;
 window.shareSup=id=>{const x=S.sups.find(s=>s.id==id);if(!x)return;const pw=prompt('Contraseña para incluir en el mensaje (no se guarda en ningún lado). Dejala vacía para no incluirla:','');if(pw===null)return;waSend(supMsg(x.label,x.email,pw))};
 window.delSup=id=>confirm('¿Quitar este superadmin? Pierde el acceso a los eventos.')&&deleteDoc(doc(db,'superadmins',id));
@@ -271,7 +276,7 @@ window.waEv=async eid=>{
   it.forEach(i=>{const p=pn[i.plan||'']||'General';if(p!=cur){cur=p;t+=`\n_${p}_\n`}t+=`${i.time} ${i.action}${i.resp?' — '+i.resp:''}\n`});
   t+=`\nInvitados: ${gs.reduce((s,x)=>s+(x.pax||1),0)} personas · llegaron ${gs.reduce((s,x)=>s+(x.inCount||0),0)}`;t=t.slice(0,3000);
   try{if(navigator.share)return await navigator.share({text:t})}catch(err){if(err.name=='AbortError')return}
-  window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');
+  waSend(t);
 };
 window.delEv=async eid=>{
   const e=S.events.find(x=>x.id==eid);
