@@ -39,6 +39,7 @@ const $=s=>document.querySelector(s);
 const S=window.S={tab:'plan',f:'all',plan:'',plans:[],items:[],guests:[],codes:[],events:[],unsubs:[],fired:new Set(),q:''};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const canEdit=()=>S.owner||S.sup||S.role=='A';
+window.addEventListener('unhandledrejection',ev=>{if(ev.reason?.code=='permission-denied')alert('Sin permiso (permission-denied): las reglas de Firebase no están actualizadas o tu rol no permite esta acción.')});
 const evDoc=()=>doc(db,'events',S.eid);
 const colE=c=>collection(db,'events',S.eid,c);
 const clean=()=>{S.unsubs.forEach(f=>f());S.unsubs=[];S.ev=null;S.items=[];S.guests=[];S.codes=[];S.plans=[];applyTheme()};
@@ -47,15 +48,20 @@ onAuthStateChanged(auth,async u=>{
   if(S.joining)return;
   S.owner=false;S.sup=false;S.role=null;
   if(!u)return login();
-  if(!u.isAnonymous){S.owner=(await getDoc(doc(db,'owners',u.uid))).exists();if(S.owner){S.name='Dueño';return listEvents();}const sd=await getDoc(doc(db,'superadmins',u.uid));S.sup=sd.exists();if(S.sup){S.name=sd.data().label||'Superadmin';return listEvents()}}
+  if(!u.isAnonymous){
+    try{S.owner=(await getDoc(doc(db,'owners',u.uid))).exists();if(S.owner){S.name='Dueño';return listEvents();}
+      const sd=await getDoc(doc(db,'superadmins',u.uid));S.sup=sd.exists();if(S.sup){S.name=sd.data().label||'Superadmin';return listEvents()}
+    }catch(e){S.msg='No se pudo verificar tu rol ('+(e.code||e.message)+'). Si sos superadmin, publicá las reglas de Firebase actualizadas.'}
+    if(!S.msg)S.msg='Ese usuario no tiene permisos de dueño ni de superadmin.';
+    await signOut(auth);return}
   const eid=localStorage.eid;
-  if(eid){try{const m=await getDoc(doc(db,'events',eid,'members',u.uid));if(m.exists()){S.role=m.data().role;S.name=m.data().name||'Sin nombre';return openEvent(eid);}}catch(e){}}
+  if(eid&&!new URLSearchParams(location.search).get('e')){try{const m=await getDoc(doc(db,'events',eid,'members',u.uid));if(m.exists()){S.role=m.data().role;S.name=m.data().name||'Sin nombre';return openEvent(eid);}}catch(e){}}
   login();
 });
 
-function login(){clean();
+function login(){clean();const msg=S.msg||'';S.msg='';
   const q=new URLSearchParams(location.search),u=q.get('e')||'',nn=q.get('n')||'';history.replaceState(null,'',location.pathname);
-  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><small>Dueño o superadmin</small><input id=em placeholder=Email><input id=pw type=password placeholder=Contraseña><button onclick="ownerLogin()">Entrar con email</button><p id=err></p></div>`;
+  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><small>Dueño o superadmin</small><input id=em placeholder=Email><input id=pw type=password placeholder=Contraseña><button onclick="ownerLogin()">Entrar con email</button><p id=err>${esc(msg)}</p></div>`;
 }
 const sl=s=>norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 window.ownerLogin=async()=>{try{await signInWithEmailAndPassword(auth,$('#em').value,$('#pw').value)}catch(e){$('#err').textContent='Datos incorrectos'}};
@@ -64,7 +70,7 @@ window.joinCode=async()=>{
   try{S.joining=true;if(!auth.currentUser)await signInAnonymously(auth);
     const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;if(j.data().blocked){S.joining=false;$('#err').textContent='Acceso bloqueado. Consultá con el organizador.';return}({eid,role}=j.data());S.name=j.data().label||'Sin nombre';await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name});
     localStorage.eid=eid;S.joining=false;S.owner=false;S.role=role;openEvent(eid);
-  }catch(e){S.joining=false;$('#err').textContent='Código inválido'}
+  }catch(e){S.joining=false;$('#err').textContent=e===0?'No existe ese acceso. Revisá evento, nombre y código.':e.code=='permission-denied'?'Sin permiso (permission-denied). Avisale al organizador: puede ser que las reglas de Firebase estén desactualizadas o que el acceso esté bloqueado.':'No se pudo entrar: '+(e.code||e.message)}
 };
 window.back=async()=>{if(S.owner||S.sup)return listEvents();localStorage.removeItem('eid');await signOut(auth)};
 
@@ -112,10 +118,11 @@ window.setTheme=(k,v)=>setEv('theme',{...(S.ev.theme||{}),[k]:v});
 window.mkSup=async()=>{
   const em=$('#se').value.trim(),nm=$('#sn').value.trim(),pw=$('#sp').value;
   if(!em||!nm||pw.length<6)return alert('Poné nombre, email y una contraseña de 6 o más caracteres');
-  try{const au=getAuth(initializeApp(firebaseConfig,'sec'+Date.now())),c=await createUserWithEmailAndPassword(au,em,pw);
+  try{const au=getAuth(initializeApp(firebaseConfig,'sec'+Date.now()));let c;
+    try{c=await createUserWithEmailAndPassword(au,em,pw)}catch(e){if(e.code=='auth/email-already-in-use')c=await signInWithEmailAndPassword(au,em,pw);else throw e}
     await setDoc(doc(db,'superadmins',c.user.uid),{email:em,label:nm});await signOut(au);
     alert('Superadmin creado. Pasale el email y la contraseña para que entre con "Entrar con email".');
-  }catch(e){alert('No se pudo crear: '+(e.code||e.message))}
+  }catch(e){alert('No se pudo crear: '+(e.code||e.message)+(e.code=='permission-denied'?'. Las reglas de Firebase publicadas no incluyen superadmins: pegá y publicá el firestore.rules actualizado.':'')+(e.code=='auth/invalid-credential'?'. Ese email ya existe con otra contraseña.':''))}
 };
 window.blkCode=async(id,v)=>{
   await updateDoc(doc(db,'events',S.eid,'codes',id),{blocked:v});
