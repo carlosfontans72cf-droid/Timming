@@ -28,7 +28,7 @@ section{padding:0 10px 30px}
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import {getAuth,signInAnonymously,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import {getAuth,signInAnonymously,signInWithEmailAndPassword,onAuthStateChanged,signOut,createUserWithEmailAndPassword} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {getFirestore,collection,doc,setDoc,addDoc,updateDoc,deleteDoc,getDoc,onSnapshot,writeBatch,runTransaction,getDocs,query,where} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // 1) PEGÁ ACÁ LA CONFIG DE TU PROYECTO FIREBASE
@@ -38,61 +38,92 @@ const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
 const $=s=>document.querySelector(s);
 const S=window.S={tab:'plan',f:'all',plan:'',plans:[],items:[],guests:[],codes:[],events:[],unsubs:[],fired:new Set(),q:''};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const canEdit=()=>S.owner||S.role=='A';
+const canEdit=()=>S.owner||S.sup||S.role=='A';
 const evDoc=()=>doc(db,'events',S.eid);
 const colE=c=>collection(db,'events',S.eid,c);
-const clean=()=>{S.unsubs.forEach(f=>f());S.unsubs=[];S.ev=null;S.items=[];S.guests=[];S.codes=[];S.plans=[]};
+const clean=()=>{S.unsubs.forEach(f=>f());S.unsubs=[];S.ev=null;S.items=[];S.guests=[];S.codes=[];S.plans=[];applyTheme()};
 
 onAuthStateChanged(auth,async u=>{
   if(S.joining)return;
-  S.owner=false;S.role=null;
+  S.owner=false;S.sup=false;S.role=null;
   if(!u)return login();
-  if(!u.isAnonymous){S.owner=(await getDoc(doc(db,'owners',u.uid))).exists();if(S.owner){S.name='Dueño';return listEvents();}}
+  if(!u.isAnonymous){S.owner=(await getDoc(doc(db,'owners',u.uid))).exists();if(S.owner){S.name='Dueño';return listEvents();}const sd=await getDoc(doc(db,'superadmins',u.uid));S.sup=sd.exists();if(S.sup){S.name=sd.data().label||'Superadmin';return listEvents()}}
   const eid=localStorage.eid;
   if(eid){try{const m=await getDoc(doc(db,'events',eid,'members',u.uid));if(m.exists()){S.role=m.data().role;S.name=m.data().name||'Sin nombre';return openEvent(eid);}}catch(e){}}
   login();
 });
 
-function login(){
+function login(){clean();
   const q=new URLSearchParams(location.search),u=q.get('e')||'',nn=q.get('n')||'';history.replaceState(null,'',location.pathname);
-  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><small>Dueño</small><input id=em placeholder=Email><input id=pw type=password placeholder=Contraseña><button onclick="ownerLogin()">Entrar como dueño</button><p id=err></p></div>`;
+  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><small>Dueño o superadmin</small><input id=em placeholder=Email><input id=pw type=password placeholder=Contraseña><button onclick="ownerLogin()">Entrar con email</button><p id=err></p></div>`;
 }
 const sl=s=>norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 window.ownerLogin=async()=>{try{await signInWithEmailAndPassword(auth,$('#em').value,$('#pw').value)}catch(e){$('#err').textContent='Datos incorrectos'}};
 window.joinCode=async()=>{
   const code=sl($('#evn').value)+'-'+sl($('#code').value)+'-'+$('#pin').value.replace(/\D/g,'');let eid,role;
   try{S.joining=true;if(!auth.currentUser)await signInAnonymously(auth);
-    const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;({eid,role}=j.data());S.name=j.data().label||'Sin nombre';await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name});
+    const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;if(j.data().blocked){S.joining=false;$('#err').textContent='Acceso bloqueado. Consultá con el organizador.';return}({eid,role}=j.data());S.name=j.data().label||'Sin nombre';await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name});
     localStorage.eid=eid;S.joining=false;S.owner=false;S.role=role;openEvent(eid);
   }catch(e){S.joining=false;$('#err').textContent='Código inválido'}
 };
-window.back=async()=>{if(S.owner)return listEvents();localStorage.removeItem('eid');await signOut(auth)};
+window.back=async()=>{if(S.owner||S.sup)return listEvents();localStorage.removeItem('eid');await signOut(auth)};
 
 function listEvents(){
   clean();S.eid=null;
   S.unsubs.push(onSnapshot(collection(db,'events'),s=>{S.events=s.docs.map(d=>({id:d.id,...d.data()}));drawList()}));
+  if(S.owner)S.unsubs.push(onSnapshot(collection(db,'superadmins'),s=>{S.sups=s.docs.map(d=>({id:d.id,...d.data()}));drawList()}));
 }
 function drawList(){
   $('#app').innerHTML=`<div class=top><span class=big>Mis eventos</span><button onclick="signOutAll()">Salir</button></div><section>
-  <div class=row><input id=en placeholder="Nombre del evento"><input id=ed type=date><button onclick="newEv()">Crear</button></div>`+
-  [...S.events].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>{const past=(e.date||'')<new Date().toLocaleDateString('en-CA');return `<div class="card ${past?'past':''}" onclick="openEvent('${e.id}')"><span><b>${esc(e.name)}</b><br><small>${esc(e.date)} · ${past?'Finalizado':'Próximo'}</small></span><span><button onclick="event.stopPropagation();waEv('${e.id}')">📲</button> <button onclick="event.stopPropagation();xlsEv('${e.id}')">📊</button> <button class=red onclick="event.stopPropagation();delEv('${e.id}')">🗑</button></span></div>`}).join('')+`</section>`;
+  ${S.owner||S.sup?`<div class=row><input id=en placeholder="Nombre del evento"><input id=ed type=date><select id=cp><option value="">Sin copiar accesos</option>${S.events.map(e=>`<option value="${e.id}">Copiar accesos de: ${esc(e.name)}</option>`).join('')}</select><button onclick="newEv()">Crear</button></div>`:''}`+
+  [...S.events].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>{const past=(e.date||'')<new Date().toLocaleDateString('en-CA');return `<div class="card ${past?'past':''}" onclick="openEvent('${e.id}')"><span><b>${esc(e.name)}</b><br><small>${esc(e.date)}${e.start?' · '+esc(e.start)+(e.end?'–'+esc(e.end):''):''} · ${past?'Finalizado':'Próximo'}</small></span><span><button onclick="event.stopPropagation();waEv('${e.id}')">📲</button> <button onclick="event.stopPropagation();xlsEv('${e.id}')">📊</button> ${S.owner?`<button class=red onclick="event.stopPropagation();delEv('${e.id}')">🗑</button>`:''}</span></div>`}).join('')+(S.owner?`<h3>Superadmins</h3><small>Ven y editan todos los eventos, pero no crean ni eliminan eventos, accesos ni colores.</small><div class=row><input id=sn placeholder="Nombre"><input id=se type=email placeholder="Email"><input id=sp type=password placeholder="Contraseña (6 o más)"><button onclick="mkSup()">Crear superadmin</button></div>`+(S.sups||[]).map(x=>`<div class=card><span>${esc(x.label)}<br><small>${esc(x.email)}</small></span><button class=red onclick="delSup('${x.id}')">✕</button></div>`).join(''):'')+`</section>`;
 }
 window.signOutAll=()=>signOut(auth);
-window.newEv=()=>{const n=$('#en').value.trim();if(n)addDoc(collection(db,'events'),{name:n,date:$('#ed').value,alerts:[10,5,0]})};
+window.newEv=async()=>{
+  const n=$('#en').value.trim();if(!n)return;
+  if(S.events.some(e=>norm(e.name)==norm(n)))return alert('Ya existe un evento con ese nombre. Usá otro para no mezclar accesos.');
+  const r=await addDoc(collection(db,'events'),{name:n,date:$('#ed').value,alerts:[10,5,0]}),src=$('#cp').value;
+  if(src){let k=0;
+    for(const c of await getAll(src,'codes')){if(c.blocked)continue;
+      const id=[sl(n),sl(c.label),c.id.slice(c.id.lastIndexOf('-')+1)].filter(Boolean).join('-');
+      await setDoc(doc(db,'events',r.id,'codes',id),{role:c.role,evn:n,label:c.label});
+      await setDoc(doc(db,'joins',id),{eid:r.id,role:c.role,label:c.label});k++}
+    alert(`Evento creado con ${k} accesos copiados. Entran con el mismo nombre y código, escribiendo el nombre del evento nuevo.`)}
+};
 
 window.openEvent=eid=>{
   clean();S.eid=eid;S.tab='plan';S.plan='';S.q='';S.edit=false;S.f='all';S.alert='';closeM();wl();
-  S.unsubs.push(onSnapshot(evDoc(),s=>{S.ev=s.data();draw()}));
+  S.unsubs.push(onSnapshot(evDoc(),s=>{S.ev=s.data();applyTheme();draw()},()=>{if(!S.owner&&!S.sup){alert('Tu acceso fue bloqueado o el evento terminó.');localStorage.removeItem('eid');signOut(auth)}}));
   S.unsubs.push(onSnapshot(colE('items'),s=>{S.items=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
   S.unsubs.push(onSnapshot(colE('guests'),s=>{S.guests=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
   S.unsubs.push(onSnapshot(colE('plans'),s=>{S.plans=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.ord||0)-(b.ord||0));draw()}));
-  if(S.owner)S.unsubs.push(onSnapshot(colE('codes'),s=>{S.codes=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
+  if(S.owner||S.sup)S.unsubs.push(onSnapshot(colE('codes'),s=>{S.codes=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
 };
 
 const ts=i=>{const t=i.time||'00:00';return +new Date(S.ev.date+'T'+t)+(t<'06:00'?864e5:0)};
 window.u=(c,id,f,v)=>updateDoc(doc(db,'events',S.eid,c,id),{[f]:v});
 window.del=(c,id)=>confirm('¿Borrar?')&&deleteDoc(doc(db,'events',S.eid,c,id));
 window.setEv=(f,v)=>updateDoc(evDoc(),{[f]:v});
+const themeOf=()=>({main:'#222222',bg:'#f4f4f6',alert:'#c0392b',...(S.ev?.theme||{})});
+const lum=c=>{const n=parseInt(c.slice(1),16);return(((n>>16)&255)*299+((n>>8)&255)*587+(n&255)*114)/1000};
+const applyTheme=()=>{const T=themeOf();let s=document.getElementById('th');if(!s){s=document.createElement('style');s.id='th';document.head.append(s)}
+  s.textContent=`body,.sticky{background:${T.bg}}body{color:${lum(T.bg)>140?'#222':'#f4f4f6'}}.top,.card,.box,.mc,.r,#next{color:#222}button,.chk{background:${T.main}}.tabs button,.off{background:#ddd;color:#222}.tabs .on{background:${T.main};color:#fff}.red,.warn{background:${T.alert}}.mesa{color:${T.alert}}#alr{background:${T.alert}}#alr button{color:${T.alert}}`};
+window.setTheme=(k,v)=>setEv('theme',{...(S.ev.theme||{}),[k]:v});
+window.mkSup=async()=>{
+  const em=$('#se').value.trim(),nm=$('#sn').value.trim(),pw=$('#sp').value;
+  if(!em||!nm||pw.length<6)return alert('Poné nombre, email y una contraseña de 6 o más caracteres');
+  try{const au=getAuth(initializeApp(firebaseConfig,'sec'+Date.now())),c=await createUserWithEmailAndPassword(au,em,pw);
+    await setDoc(doc(db,'superadmins',c.user.uid),{email:em,label:nm});await signOut(au);
+    alert('Superadmin creado. Pasale el email y la contraseña para que entre con "Entrar con email".');
+  }catch(e){alert('No se pudo crear: '+(e.code||e.message))}
+};
+window.blkCode=async(id,v)=>{
+  await updateDoc(doc(db,'events',S.eid,'codes',id),{blocked:v});
+  try{await updateDoc(doc(db,'joins',id),{blocked:v})}catch(e){}
+  if(v)(await getDocs(query(colE('members'),where('code','==',id)))).forEach(d=>deleteDoc(d.ref));
+};
+window.blkAll=async v=>{if(!confirm(v?'¿Bloquear todos los accesos de este evento?':'¿Activar todos los accesos de este evento?'))return;for(const c of S.codes)await blkCode(c.id,v)};
+window.delSup=id=>confirm('¿Quitar este superadmin? Pierde el acceso a los eventos.')&&deleteDoc(doc(db,'superadmins',id));
 window.setAlerts=v=>setEv('alerts',v.split(',').map(x=>parseInt(x)).filter(x=>x>=0));
 window.addItem=()=>addDoc(colE('items'),{time:'12:00',action:'Nuevo momento',resp:'',notes:'',done:false,plan:S.plan});
 const dk=x=>norm(x.name)+'|'+norm(x.det);
@@ -127,11 +158,11 @@ function render(){
   
   const ev=S.ev,e=canEdit();
   const items=S.items.filter(i=>(i.plan||'')==S.plan).sort((a,b)=>ts(a)-ts(b));
-  let h=`<div class=top><button onclick="back()">${S.owner?'← Eventos':'Salir'}</button>`+
-   (e?`<input class=big value="${esc(ev.name)}" onchange="setEv('name',this.value)"><input type=date value="${ev.date||''}" onchange="setEv('date',this.value)">`:`<span class=big>${esc(ev.name)}</span>`)+
+  let h=`<div class=top><button onclick="back()">${S.owner||S.sup?'← Eventos':'Salir'}</button>`+
+   (e?`<input class=big value="${esc(ev.name)}" onchange="setEv('name',this.value)"><input type=date value="${ev.date||''}" onchange="setEv('date',this.value)"><small>Desde</small><input type=time title="Hora de comienzo (opcional)" value="${ev.start||''}" onchange="setEv('start',this.value)"><small>Hasta</small><input type=time title="Hora de fin (opcional)" value="${ev.end||''}" onchange="setEv('end',this.value)">`:`<span class=big>${esc(ev.name)}</span>${ev.start?`<small>${esc(ev.start)}${ev.end?' – '+esc(ev.end):''}</small>`:''}`)+
    `${e?`<button onclick="xlsEv(S.eid)">📊</button><button onclick="waEv(S.eid)">📲</button>`:''}</div><div id=banner onclick="clearAlert()">${esc(S.alert||'')}</div><div id=next></div><div class=tabs>`+
    `<button class="${S.tab=='plan'?'on':''}" onclick="tab('plan')">Cronograma</button><button class="${S.tab=='g'?'on':''}" onclick="tab('g')">Invitados ${cnt().join('/')}</button>`+
-   (S.owner?`<button class="${S.tab=='acc'?'on':''}" onclick="tab('acc')">Accesos</button>`:'')+`</div><section>`;
+   (S.owner||S.sup?`<button class="${S.tab=='acc'?'on':''}" onclick="tab('acc')">Accesos</button>`:'')+(S.owner?`<button class="${S.tab=='th'?'on':''}" onclick="tab('th')">🎨 Colores</button>`:'')+`</div><section>`;
   if(S.tab=='plan'){
     h+=`<div class=row>`+[{id:'',name:'General'},...S.plans].map(p=>`<button class="${S.plan==p.id?'':'off'}" onclick="S.plan='${p.id}';draw(true)">${esc(p.name)}</button>`).join('')+(e?`<button onclick="addPlan()">+ Cronograma</button>`:'')+`</div>`;
     if(S.plan&&e){const p=S.plans.find(x=>x.id==S.plan);if(p)h+=`<div class=row><input value="${esc(p.name)}" onchange="renPlan('${p.id}',this.value)"><button class=red onclick="delPlan('${p.id}')">Eliminar este cronograma</button></div>`}
@@ -144,9 +175,10 @@ function render(){
     if(e&&S.edit)h+=`<div class=row><button onclick="addGuest()">+ Invitado</button><button onclick="expCsv()">Exportar códigos</button><input type=file accept=".xlsx,.xls,.csv" onchange="impFile(this.files[0])"></div><div class=row><textarea id=paste rows=2 style="flex:1" placeholder="Pegá acá la lista (una línea por invitado: Nombre ; Mesa)"></textarea><button onclick="impText()">Importar</button></div>`;
     h+=`<div id=gl></div>`;
   }
+  if(S.tab=='th'){const T=themeOf();h+=`<div class=card><span>Botones y pestañas</span><input type=color value="${T.main}" onchange="setTheme('main',this.value)"></div><div class=card><span>Fondo (mejor claro)</span><input type=color value="${T.bg}" onchange="setTheme('bg',this.value)"></div><div class=card><span>Avisos, alertas y mesa</span><input type=color value="${T.alert}" onchange="setTheme('alert',this.value)"></div><div class=row><button class=off onclick="setEv('theme',{})">Restablecer colores</button></div>`}
   if(S.tab=='acc'){
-    h+=`<div class=row><input id=lb placeholder="Nombre"><input id=ap placeholder="Apellido"><select id=rl><option value=S>Funcionario (solo ve)</option><option value=A>Admin (edita)</option></select><button onclick="mk()">Crear código</button></div>`+
-    S.codes.map(c=>`<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}<br><small>Evento: ${esc(c.evn||ev.name)} · Código: <b data-c="${esc(c.id.slice(c.id.lastIndexOf('-')+1))}" onclick="this.textContent=this.dataset.c" style="cursor:pointer">•••••• (tocá para ver)</b></small></span><span><a href="https://wa.me/?text=${encodeURIComponent('*'+(c.evn||ev.name)+'*\nHola '+c.label+', este es tu acceso como '+(c.role=='A'?'admin':'funcionario')+':\n'+location.origin+'/?e='+encodeURIComponent(c.evn||ev.name)+'&n='+encodeURIComponent(c.label)+'\n\nTu código de 6 dígitos: '+c.id.slice(c.id.lastIndexOf('-')+1))}" target=_blank>WhatsApp</a> <button onclick="delCode('${c.id}')">✕</button></span></div>`).join('');
+    h+=`<div class=row><input id=lb placeholder="Nombre"><input id=ap placeholder="Apellido"><select id=rl><option value=S>Funcionario (solo ve)</option><option value=A>Admin (edita)</option></select><button onclick="mk()">Crear código</button></div><div class=row><button class=off onclick="blkAll(true)">🔒 Bloquear todos</button><button class=off onclick="blkAll(false)">🔓 Activar todos</button></div>`+
+    S.codes.map(c=>`<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}${c.blocked?' · 🔒 BLOQUEADO':''}<br><small>Evento: ${esc(c.evn||ev.name)} · Código: <b data-c="${esc(c.id.slice(c.id.lastIndexOf('-')+1))}" onclick="this.textContent=this.dataset.c" style="cursor:pointer">•••••• (tocá para ver)</b></small></span><span><a href="https://wa.me/?text=${encodeURIComponent('*'+(c.evn||ev.name)+'*\nHola '+c.label+', este es tu acceso como '+(c.role=='A'?'admin':'funcionario')+':\n'+location.origin+'/?e='+encodeURIComponent(c.evn||ev.name)+'&n='+encodeURIComponent(c.label)+'\n\nTu código de 6 dígitos: '+c.id.slice(c.id.lastIndexOf('-')+1))}" target=_blank>WhatsApp</a> <button class=off onclick="blkCode('${c.id}',${!c.blocked})">${c.blocked?'🔓 Activar':'🔒 Bloquear'}</button> <button onclick="delCode('${c.id}')">✕</button></span></div>`).join('');
   }
   $('#app').innerHTML=h+'</section>';
   if(S.tab=='g')drawG();
@@ -225,7 +257,7 @@ window.xlsEv=async eid=>{
   XLSX.writeFile(wb,(e.name||'evento')+'.xlsx');
 };
 window.waEv=async eid=>{
-  const {e,it,gs,pn}=await evData(eid);let t=`*${e.name}* (${e.date||''})\n`,cur;
+  const {e,it,gs,pn}=await evData(eid);let t=`*${e.name}* (${e.date||''}${e.start?' '+e.start+(e.end?'–'+e.end:''):''})\n`,cur;
   it.forEach(i=>{const p=pn[i.plan||'']||'General';if(p!=cur){cur=p;t+=`\n_${p}_\n`}t+=`${i.time} ${i.action}${i.resp?' — '+i.resp:''}\n`});
   t+=`\nInvitados: ${gs.reduce((s,x)=>s+(x.pax||1),0)} personas · llegaron ${gs.reduce((s,x)=>s+(x.inCount||0),0)}`;t=t.slice(0,3000);
   try{if(navigator.share)return await navigator.share({text:t})}catch(err){if(err.name=='AbortError')return}
