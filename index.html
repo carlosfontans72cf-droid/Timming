@@ -34,6 +34,7 @@ import {getFirestore,collection,doc,setDoc,addDoc,updateDoc,deleteDoc,getDoc,onS
 // 1) PEGÁ ACÁ LA CONFIG DE TU PROYECTO FIREBASE
 const firebaseConfig={apiKey:"AIzaSyD1te6RssbCBSrtpNisansqa-fGjwQBrxM",authDomain:"timming-fad72.firebaseapp.com",projectId:"timming-fad72",storageBucket:"timming-fad72.firebasestorage.app",messagingSenderId:"376144224070",appId:"1:376144224070:web:62c2813a34fe29f4e70f47"};
 
+const APP_URL='https://timming-zeta.vercel.app';
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
 const $=s=>document.querySelector(s);
 const S=window.S={tab:'plan',f:'all',plan:'',plans:[],items:[],guests:[],codes:[],events:[],unsubs:[],fired:new Set(),q:''};
@@ -61,9 +62,10 @@ onAuthStateChanged(auth,async u=>{
 
 function login(){clean();const msg=S.msg||'';S.msg='';
   const q=new URLSearchParams(location.search),u=q.get('e')||'',nn=q.get('n')||'';history.replaceState(null,'',location.pathname);
-  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><small>Dueño o superadmin</small><input id=em placeholder=Email><input id=pw type=password placeholder=Contraseña><label style="font-size:.85em"><input type=checkbox onchange="document.querySelector('#pw').type=this.checked?'text':'password'"> Mostrar contraseña</label><button onclick="ownerLogin()">Entrar con email</button><button class=off onclick="resetPw()">Olvidé mi contraseña</button><p id=err>${esc(msg)}</p></div>`;
+  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><button class=off id=owb onclick="showOwner()">Soy dueño o superadmin</button><div id=ow style="display:grid;gap:8px"></div><p id=err>${esc(msg)}</p></div>`;
 }
 const sl=s=>norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+window.showOwner=()=>{document.querySelector('#owb').remove();document.querySelector('#ow').innerHTML=`<small>Dueño o superadmin</small><input id=em type=email autocomplete=off placeholder=Email><input id=pw type=password autocomplete=new-password placeholder=Contraseña><label style="font-size:.85em"><input type=checkbox onchange="document.querySelector('#pw').type=this.checked?'text':'password'"> Mostrar contraseña</label><button onclick="ownerLogin()">Entrar con email</button><button class=off onclick="resetPw()">Olvidé mi contraseña</button>`};
 window.ownerLogin=async()=>{
   const em=$('#em').value.trim().toLowerCase(),pw=$('#pw').value.trim();
   if(!em||!pw){$('#err').textContent='Escribí el email y la contraseña.';return}
@@ -85,7 +87,7 @@ window.joinCode=async()=>{
   try{S.joining=true;if(!auth.currentUser)await signInAnonymously(auth);
     const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;if(j.data().blocked){S.joining=false;$('#err').textContent='Acceso bloqueado. Consultá con el organizador.';return}({eid,role}=j.data());S.name=j.data().label||'Sin nombre';await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name});
     localStorage.eid=eid;S.joining=false;S.owner=false;S.role=role;openEvent(eid);
-  }catch(e){S.joining=false;$('#err').textContent=e===0?'No existe ese acceso. Revisá evento, nombre y código.':e.code=='permission-denied'?'Sin permiso (permission-denied). Avisale al organizador: puede ser que las reglas de Firebase estén desactualizadas o que el acceso esté bloqueado.':'No se pudo entrar: '+(e.code||e.message)}
+  }catch(e){S.joining=false;$('#err').textContent=e===0?'No existe ese acceso. Busqué evento "'+sl($('#evn').value)+'" + nombre "'+sl($('#code').value)+'" + ese código. Revisá que coincidan con los del acceso (en Accesos, tocá el código para verlo).':e.code=='permission-denied'?'Sin permiso (permission-denied). Avisale al organizador: puede ser que las reglas de Firebase estén desactualizadas o que el acceso esté bloqueado.':'No se pudo entrar: '+(e.code||e.message)}
 };
 window.back=async()=>{if(S.owner||S.sup)return listEvents();localStorage.removeItem('eid');await signOut(auth)};
 
@@ -144,6 +146,16 @@ window.blkCode=async(id,v)=>{
   try{await updateDoc(doc(db,'joins',id),{blocked:v})}catch(e){}
   if(v)(await getDocs(query(colE('members'),where('code','==',id)))).forEach(d=>deleteDoc(d.ref));
 };
+window.fixCodes=async()=>{
+  let ok=0,fixed=0;const lines=[];
+  for(const c of S.codes){
+    const j=await getDoc(doc(db,'joins',c.id)),d=j.exists()?j.data():null;
+    if(!d||d.eid!==S.eid||d.role!==c.role||(d.label||'')!==(c.label||'')||!!d.blocked!==!!c.blocked){
+      await setDoc(doc(db,'joins',c.id),{eid:S.eid,role:c.role,label:c.label||'',...(c.blocked?{blocked:true}:{})});fixed++}else ok++;
+    lines.push('• '+c.label+' ('+(c.role=='A'?'Admin':'Funcionario')+'): evento "'+(c.evn||S.ev.name)+'", nombre "'+c.label+'"'+(c.blocked?' [BLOQUEADO]':''));
+  }
+  alert(ok+' accesos correctos, '+fixed+' reparados.\n\nCada persona entra con:\n'+lines.join('\n')+'\n\n(más su código de 6 dígitos)');
+};
 window.blkAll=async v=>{if(!confirm(v?'¿Bloquear todos los accesos de este evento?':'¿Activar todos los accesos de este evento?'))return;for(const c of S.codes)await blkCode(c.id,v)};
 const waSend=t=>{
   const u='https://wa.me/?text='+encodeURIComponent(t),w=window.open(u,'_blank');
@@ -151,7 +163,7 @@ const waSend=t=>{
   let d=document.querySelector('#modal');if(!d){d=document.createElement('div');d.id='modal';document.body.append(d)}
   d.innerHTML=`<div class=mc><h3>Mensaje listo para enviar</h3><textarea id=wat rows=8 readonly>${esc(t)}</textarea><a href="${u}" target=_blank onclick="setTimeout(closeM,400)" style="background:#25d366;color:#fff;padding:12px;border-radius:8px;text-decoration:none;font-weight:700">Abrir WhatsApp</a><button onclick="document.querySelector('#wat').select();document.execCommand('copy')">Copiar mensaje</button><button class=off onclick="closeM()">Cerrar</button></div>`;
 };
-const supMsg=(nm,em,pw)=>`*Acceso de superadmin*\nHola ${nm}, este es tu acceso para ver y administrar los eventos:\n${location.origin}\n\nEmail: ${em}${pw?'\nContraseña: '+pw:''}\n\nEntrá en la parte "Dueño o superadmin" con el botón "Entrar con email".`;
+const supMsg=(nm,em,pw)=>`*Acceso de superadmin*\nHola ${nm}, este es tu acceso para ver y administrar los eventos:\n${APP_URL}\n\nEmail: ${em}${pw?'\nContraseña: '+pw:''}\n\nEntrá en la parte "Dueño o superadmin" con el botón "Entrar con email".`;
 window.shareSup=id=>{const x=S.sups.find(s=>s.id==id);if(!x)return;const pw=prompt('Contraseña para incluir en el mensaje (no se guarda en ningún lado). Dejala vacía para no incluirla:','');if(pw===null)return;waSend(supMsg(x.label,x.email,pw))};
 window.delSup=id=>confirm('¿Quitar este superadmin? Pierde el acceso a los eventos.')&&deleteDoc(doc(db,'superadmins',id));
 window.setAlerts=v=>setEv('alerts',v.split(',').map(x=>parseInt(x)).filter(x=>x>=0));
@@ -188,7 +200,7 @@ function render(){
   
   const ev=S.ev,e=canEdit();
   const items=S.items.filter(i=>(i.plan||'')==S.plan).sort((a,b)=>ts(a)-ts(b));
-  let h=`<div class=top><button onclick="back()">${S.owner||S.sup?'← Eventos':'Salir'}</button>`+
+  let h=`<div class=top><button onclick="back()">${S.owner||S.sup?'← Eventos':'Salir'}</button><small>👤 ${S.owner?'Dueño':esc(S.name||'')+' · '+(S.sup?'Superadmin':S.role=='A'?'Admin':'Funcionario')}</small>`+
    (e?`<input class=big value="${esc(ev.name)}" onchange="setEv('name',this.value)"><input type=date value="${ev.date||''}" onchange="setEv('date',this.value)"><small>Desde</small><input type=time title="Hora de comienzo (opcional)" value="${ev.start||''}" onchange="setEv('start',this.value)"><small>Hasta</small><input type=time title="Hora de fin (opcional)" value="${ev.end||''}" onchange="setEv('end',this.value)">`:`<span class=big>${esc(ev.name)}</span>${ev.start?`<small>${esc(ev.start)}${ev.end?' – '+esc(ev.end):''}</small>`:''}`)+
    `${e?`<button onclick="xlsEv(S.eid)">📊</button><button onclick="waEv(S.eid)">📲</button>`:''}</div><div id=banner onclick="clearAlert()">${esc(S.alert||'')}</div><div id=next></div><div class=tabs>`+
    `<button class="${S.tab=='plan'?'on':''}" onclick="tab('plan')">Cronograma</button><button class="${S.tab=='g'?'on':''}" onclick="tab('g')">Invitados ${cnt().join('/')}</button>`+
@@ -207,8 +219,8 @@ function render(){
   }
   if(S.tab=='th'){const T=themeOf();h+=`<div class=card><span>Botones y pestañas</span><input type=color value="${T.main}" onchange="setTheme('main',this.value)"></div><div class=card><span>Fondo (mejor claro)</span><input type=color value="${T.bg}" onchange="setTheme('bg',this.value)"></div><div class=card><span>Avisos, alertas y mesa</span><input type=color value="${T.alert}" onchange="setTheme('alert',this.value)"></div><div class=row><button class=off onclick="setEv('theme',{})">Restablecer colores</button></div>`}
   if(S.tab=='acc'){
-    h+=`<div class=row><input id=lb placeholder="Nombre"><input id=ap placeholder="Apellido"><select id=rl><option value=S>Funcionario (solo ve)</option><option value=A>Admin (edita)</option></select><button onclick="mk()">Crear código</button></div><div class=row><button class=off onclick="blkAll(true)">🔒 Bloquear todos</button><button class=off onclick="blkAll(false)">🔓 Activar todos</button></div>`+
-    S.codes.map(c=>`<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}${c.blocked?' · 🔒 BLOQUEADO':''}<br><small>Evento: ${esc(c.evn||ev.name)} · Código: <b data-c="${esc(c.id.slice(c.id.lastIndexOf('-')+1))}" onclick="this.textContent=this.dataset.c" style="cursor:pointer">•••••• (tocá para ver)</b></small></span><span><a href="https://wa.me/?text=${encodeURIComponent('*'+(c.evn||ev.name)+'*\nHola '+c.label+', este es tu acceso como '+(c.role=='A'?'admin':'funcionario')+':\n'+location.origin+'/?e='+encodeURIComponent(c.evn||ev.name)+'&n='+encodeURIComponent(c.label)+'\n\nTu código de 6 dígitos: '+c.id.slice(c.id.lastIndexOf('-')+1))}" target=_blank>WhatsApp</a> <button class=off onclick="blkCode('${c.id}',${!c.blocked})">${c.blocked?'🔓 Activar':'🔒 Bloquear'}</button> <button onclick="delCode('${c.id}')">✕</button></span></div>`).join('');
+    h+=`<div class=row><input id=lb placeholder="Nombre"><input id=ap placeholder="Apellido"><select id=rl><option value=S>Funcionario (solo ve)</option><option value=A>Admin (edita)</option></select><button onclick="mk()">Crear código</button></div><div class=row><button class=off onclick="blkAll(true)">🔒 Bloquear todos</button><button class=off onclick="blkAll(false)">🔓 Activar todos</button><button class=off onclick="fixCodes()">🔧 Verificar y reparar accesos</button></div>`+
+    S.codes.map(c=>`<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}${c.blocked?' · 🔒 BLOQUEADO':''}<br><small>Evento: ${esc(c.evn||ev.name)} · Código: <b data-c="${esc(c.id.slice(c.id.lastIndexOf('-')+1))}" onclick="this.textContent=this.dataset.c" style="cursor:pointer">•••••• (tocá para ver)</b></small></span><span><a href="https://wa.me/?text=${encodeURIComponent('*'+(c.evn||ev.name)+'*\nHola '+c.label+', este es tu acceso como '+(c.role=='A'?'admin':'funcionario')+':\n'+APP_URL+'/?e='+encodeURIComponent(c.evn||ev.name)+'&n='+encodeURIComponent(c.label)+'\n\nTu código de 6 dígitos: '+c.id.slice(c.id.lastIndexOf('-')+1))}" target=_blank>WhatsApp</a> <button class=off onclick="blkCode('${c.id}',${!c.blocked})">${c.blocked?'🔓 Activar':'🔒 Bloquear'}</button> <button onclick="delCode('${c.id}')">✕</button></span></div>`).join('');
   }
   $('#app').innerHTML=h+'</section>';
   if(S.tab=='g')drawG();
