@@ -52,7 +52,7 @@ onAuthStateChanged(auth,async u=>{
   if(!u.isAnonymous){const lk=new URLSearchParams(location.search).get('e');if(lk){if(confirm('Abriste un link de acceso para personal del evento. ¿Querés cerrar tu sesión actual (dueño o superadmin) para entrar con ese acceso?')){await signOut(auth);return}history.replaceState(null,'',location.pathname)}
     try{S.owner=(await getDoc(doc(db,'owners',u.uid))).exists();if(S.owner){S.name='Dueño';return listEvents();}
       const sd=await getDoc(doc(db,'superadmins',u.uid));S.sup=sd.exists();if(S.sup){S.name=sd.data().label||'Superadmin';return listEvents()}
-    }catch(e){S.msg='No se pudo verificar tu rol ('+(e.code||e.message)+'). Si sos superadmin, publicá las reglas de Firebase actualizadas.'}
+    }catch(e){clean();$('#app').innerHTML=`<div class=box><h2>Eventos</h2><p>No se pudo verificar tu rol (${esc(e.code||e.message)}). Revisá tu conexión o que las reglas de Firebase estén publicadas.</p><button onclick="location.reload()">Reintentar</button><button class=off onclick="signOutAll()">Salir</button></div>`;return}
     if(!S.msg)S.msg='Ese usuario no tiene permisos de dueño ni de superadmin.';
     await signOut(auth);return}
   const eid=localStorage.eid;
