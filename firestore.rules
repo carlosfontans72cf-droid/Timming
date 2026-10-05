@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signed() { return request.auth != null; }
+    function owner() {
+      return signed() && exists(/databases/$(db)/documents/owners/$(request.auth.uid));
+    }
+    function isSuperadmin() {
+      // Antes exigía request.auth.token.email_verified == true, pero la app
+      // nunca envía ni pide verificación de email al crear un superadmin
+      // (mkSup() en index.html usa createUserWithEmailAndPassword sin
+      // sendEmailVerification), así que esa condición era imposible de
+      // cumplir y ningún superadmin podía entrar nunca. Se saca esa exigencia.
+      return signed()
+        && 'email' in request.auth.token
+        && exists(/databases/$(db)/documents/superadmins/$(request.auth.token.email.lower()));
+    }
+    function member(e) {
+      return signed() && exists(/databases/$(db)/documents/events/$(e)/members/$(request.auth.uid));
+    }
+    function mrole(e) {
+      return get(/databases/$(db)/documents/events/$(e)/members/$(request.auth.uid)).data.role;
+    }
+    function admin(e) {
+      return owner() || isSuperadmin() || (member(e) && mrole(e) == 'A');
+    }
+    function see(e) {
+      return owner() || isSuperadmin() || member(e);
+    }
+
+    match /owners/{u} {
+      allow read: if signed() && request.auth.uid == u;
+    }
+
+    match /superadmins/{emailDoc} {
+      allow read: if owner() || (signed() && request.auth.token.email.lower() == emailDoc);
+      allow write: if owner();
+    }
+
+    match /joins/{code} {
+      allow get: if signed();
+      allow list: if false;
+      allow create, update, delete: if owner() || isSuperadmin();
+    }
+
+    match /events/{e} {
+      allow read: if see(e);
+      allow create: if owner() || isSuperadmin();
+      allow delete: if owner();
+      allow update: if owner() || isSuperadmin()
+        || (admin(e) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['theme']));
+
+      match /items/{id} {
+        allow read: if see(e);
+        allow create, update, delete: if admin(e);
+      }
+      match /plans/{id} {
+        allow read: if see(e);
+        allow create, update, delete: if admin(e);
+      }
+      match /guests/{id} {
+        allow read: if see(e);
+        allow create, delete: if admin(e);
+        allow update: if admin(e) || (member(e)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['inCount', 'arrivedAt', 'arrivedBy']));
+      }
+      match /codes/{id} {
+        allow read: if owner() || isSuperadmin();
+        allow create, update, delete: if owner() || isSuperadmin();
+      }
+      match /members/{uid} {
+        allow read: if signed() && (request.auth.uid == uid || owner() || isSuperadmin());
+        allow create, update: if signed() && request.auth.uid == uid
+          && exists(/databases/$(db)/documents/events/$(e)/codes/$(request.resource.data.code))
+          && get(/databases/$(db)/documents/events/$(e)/codes/$(request.resource.data.code)).data.role == request.resource.data.role
+          && get(/databases/$(db)/documents/events/$(e)/codes/$(request.resource.data.code)).blocked != true;
+        allow delete: if owner() || isSuperadmin();
+      }
+    }
+  }
+}
