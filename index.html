@@ -221,6 +221,7 @@ function render(){
     h+=`<div class=row>`+[{id:'',name:'General'},...S.plans].map(p=>`<button class="${S.plan==p.id?'':'off'}" onclick="S.plan='${p.id}';draw(true)">${esc(p.name)}</button>`).join('')+(e?`<button onclick="addPlan()">+ Cronograma</button>`:'')+`</div>`;
     if(S.plan&&e){const p=S.plans.find(x=>x.id==S.plan);if(p)h+=`<div class=row><input value="${esc(p.name)}" onchange="renPlan('${p.id}',this.value)"><button class=red onclick="delPlan('${p.id}')">Eliminar este cronograma</button></div>`}
     if(e)h+=`<div class=row><button onclick="addItem()">+ Momento</button><small>Avisos (min antes):</small><input style="max-width:90px" value="${(ev.alerts||[10,5,0]).join(',')}" onchange="setAlerts(this.value)"></div>`;
+    if(e)h+=`<div class=row><input type=file accept=".xlsx,.xls,.csv" onchange="impItemsFile(this.files[0])"></div><div class=row><textarea id=pasteItems rows=2 style="flex:1" placeholder="Pegá acá el cronograma (Hora ; Acción ; Responsable ; Notas ; Cronograma)"></textarea><button onclick="impItemsText()">Importar</button></div>`;
     {let cur='';items.forEach(i=>{
       if(S.plan==''){const lbl=pn[i.plan||'']||'General';if(lbl!=cur){cur=lbl;h+=`<div style="font-weight:700;padding:10px 2px 2px;color:#555">${esc(lbl)}</div>`}}
       h+=e?`<div class=row><input type=checkbox style="flex:0" ${i.done?'checked':''} onchange="u('items','${i.id}','done',this.checked)"><input type=time value="${i.time||''}" onchange="u('items','${i.id}','time',this.value)"><input value="${esc(i.action)}" onchange="u('items','${i.id}','action',this.value)"><input placeholder=Responsable value="${esc(i.resp)}" onchange="u('items','${i.id}','resp',this.value)"><input placeholder=Notas value="${esc(i.notes)}" onchange="u('items','${i.id}','notes',this.value)"><button onclick="del('items','${i.id}')">✕</button></div>`
@@ -373,6 +374,50 @@ async function impRows(r){
     r.slice(i,i+400).forEach(x=>b.set(doc(colE('guests')),{name:String(x[n]??'').replace(/^[\d.\-)\s•]+/,'').trim(),table:m>=0?String(x[m]??'').trim():'',notes:nt>=0?String(x[nt]??''):'',pax:p>=0?(parseInt(x[p])||1):1,inCount:0,det:dt>=0?String(x[dt]??'').trim():'',code:cd>=0?String(x[cd]??'').trim():''}));
     await b.commit();}
   alert(r.length+' invitados cargados'+(skip.length?`\n${skip.length} repetidos omitidos (agregales un detalle y cargalos de nuevo):\n`+skip.slice(0,10).join(', '):''));
+}
+
+// Importar cronograma desde un archivo (Excel/CSV) o texto pegado, por
+// ejemplo el que te pasa el organizador por WhatsApp. Columnas esperadas:
+// Hora, Acción/Momento, Responsable, Notas, Cronograma (esta última es
+// opcional: si no está, todo se carga en el cronograma que estés viendo).
+window.impItemsFile=async f=>{if(f){const wb=XLSX.read(await f.arrayBuffer());impItemsRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}))}};
+window.impItemsText=()=>impItemsRows($('#pasteItems').value.split(/\r?\n/).map(l=>l.split(/\t|;/).map(x=>x.trim())));
+async function impItemsRows(r){
+  r=r.filter(x=>x&&x.some(v=>String(v??'').trim()));if(!r.length)return;
+  let ti=0,ac=1,re=-1,no=-1,pl=-1;const h=r[0].map(x=>String(x).toLowerCase());
+  if(h.some(x=>/hora|time/.test(x))){
+    ti=h.findIndex(x=>/hora|time/.test(x));
+    ac=h.findIndex(x=>/acci[oó]n|momento|actividad/.test(x));
+    re=h.findIndex(x=>/responsable|resp/.test(x));
+    no=h.findIndex(x=>/nota|obs/.test(x));
+    pl=h.findIndex(x=>/cronograma|plan/.test(x));
+    r=r.slice(1);
+  }
+  const pnByName={};S.plans.forEach(p=>pnByName[norm(p.name)]=p.id);
+  let nuevos=0;
+  for(let i=0;i<r.length;i+=400){const b=writeBatch(db);
+    r.slice(i,i+400).forEach(x=>{
+      let plan=S.plan;
+      if(pl>=0){
+        const pname=String(x[pl]??'').trim();
+        if(pname){
+          const key=norm(pname);
+          if(!(key in pnByName)){const ref=doc(colE('plans'));pnByName[key]=ref.id;b.set(ref,{name:pname,ord:Date.now()});nuevos++}
+          plan=pnByName[key];
+        } else plan='';
+      }
+      b.set(doc(colE('items')),{
+        time:ti>=0?String(x[ti]??'').trim():'12:00',
+        action:ac>=0?String(x[ac]??'').trim():'Nuevo momento',
+        resp:re>=0?String(x[re]??'').trim():'',
+        notes:no>=0?String(x[no]??'').trim():'',
+        done:false,
+        plan
+      });
+    });
+    await b.commit();
+  }
+  alert(r.length+' momentos importados'+(nuevos?` (se crearon ${nuevos} cronogramas nuevos)`:'')+'.');
 }
 
 function beep(){try{S.ac=S.ac||new(window.AudioContext||window.webkitAudioContext)();S.ac.resume();const o=S.ac.createOscillator();o.type='square';o.frequency.value=880;o.connect(S.ac.destination);o.start();setTimeout(()=>o.stop(),500)}catch{}navigator.vibrate?.([400,150,400])}
