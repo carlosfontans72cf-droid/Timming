@@ -208,7 +208,10 @@ function render(){
   
   
   const ev=S.ev,e=canEdit();
-  const items=S.items.filter(i=>(i.plan||'')==S.plan).sort((a,b)=>ts(a)-ts(b));
+  const pn={'':'General'};S.plans.forEach(p=>pn[p.id]=p.name);
+  const items=(S.plan===''
+    ?[...S.items].sort((a,b)=>(pn[a.plan||'']||'').localeCompare(pn[b.plan||'']||'')||ts(a)-ts(b))
+    :S.items.filter(i=>(i.plan||'')==S.plan).sort((a,b)=>ts(a)-ts(b)));
   let h=`<div class=top><button onclick="back()">${S.owner||S.sup?'← Eventos':'Salir'}</button><small>👤 ${S.owner?'Dueño':esc(S.name||'')+' · '+(S.sup?'Superadmin':S.role=='A'?'Admin':'Funcionario')}</small>`+
    (e?`<input class=big value="${esc(ev.name)}" onchange="setEv('name',this.value)"><input type=date value="${ev.date||''}" onchange="setEv('date',this.value)"><small>Desde</small><input type=time title="Hora de comienzo (opcional)" value="${ev.start||''}" onchange="setEv('start',this.value)"><small>Hasta</small><input type=time title="Hora de fin (opcional)" value="${ev.end||''}" onchange="setEv('end',this.value)">`:`<span class=big>${esc(ev.name)}</span>${ev.start?`<small>${esc(ev.start)}${ev.end?' – '+esc(ev.end):''}</small>`:''}`)+
    `${e?`<button onclick="xlsEv(S.eid)">📊</button><button onclick="waEv(S.eid)">📲</button>`:''}</div><div id=banner onclick="clearAlert()">${esc(S.alert||'')}</div><div id=next></div><div class=tabs>`+
@@ -218,8 +221,11 @@ function render(){
     h+=`<div class=row>`+[{id:'',name:'General'},...S.plans].map(p=>`<button class="${S.plan==p.id?'':'off'}" onclick="S.plan='${p.id}';draw(true)">${esc(p.name)}</button>`).join('')+(e?`<button onclick="addPlan()">+ Cronograma</button>`:'')+`</div>`;
     if(S.plan&&e){const p=S.plans.find(x=>x.id==S.plan);if(p)h+=`<div class=row><input value="${esc(p.name)}" onchange="renPlan('${p.id}',this.value)"><button class=red onclick="delPlan('${p.id}')">Eliminar este cronograma</button></div>`}
     if(e)h+=`<div class=row><button onclick="addItem()">+ Momento</button><small>Avisos (min antes):</small><input style="max-width:90px" value="${(ev.alerts||[10,5,0]).join(',')}" onchange="setAlerts(this.value)"></div>`;
-    h+=items.map(i=>e?`<div class=row><input type=checkbox style="flex:0" ${i.done?'checked':''} onchange="u('items','${i.id}','done',this.checked)"><input type=time value="${i.time||''}" onchange="u('items','${i.id}','time',this.value)"><input value="${esc(i.action)}" onchange="u('items','${i.id}','action',this.value)"><input placeholder=Responsable value="${esc(i.resp)}" onchange="u('items','${i.id}','resp',this.value)"><input placeholder=Notas value="${esc(i.notes)}" onchange="u('items','${i.id}','notes',this.value)"><button onclick="del('items','${i.id}')">✕</button></div>`
-      :`<div class="row r ${i.done?'done':''}"><b>${esc(i.time)}</b> ${esc(i.action)}<small>${esc(i.resp)} ${esc(i.notes)}</small></div>`).join('');
+    {let cur='';items.forEach(i=>{
+      if(S.plan==''){const lbl=pn[i.plan||'']||'General';if(lbl!=cur){cur=lbl;h+=`<div style="font-weight:700;padding:10px 2px 2px;color:#555">${esc(lbl)}</div>`}}
+      h+=e?`<div class=row><input type=checkbox style="flex:0" ${i.done?'checked':''} onchange="u('items','${i.id}','done',this.checked)"><input type=time value="${i.time||''}" onchange="u('items','${i.id}','time',this.value)"><input value="${esc(i.action)}" onchange="u('items','${i.id}','action',this.value)"><input placeholder=Responsable value="${esc(i.resp)}" onchange="u('items','${i.id}','resp',this.value)"><input placeholder=Notas value="${esc(i.notes)}" onchange="u('items','${i.id}','notes',this.value)"><button onclick="del('items','${i.id}')">✕</button></div>`
+        :`<div class="row r ${i.done?'done':''}"><b>${esc(i.time)}</b> ${esc(i.action)}<small>${esc(i.resp)} ${esc(i.notes)}</small></div>`;
+    });}
   }
   if(S.tab=='g'){
     h+=`<div class=sticky><div id=cnt></div><div class=row><input id=q autofocus placeholder="Buscar nombre o mesa..." value="${esc(S.q)}" oninput="S.q=this.value;drawG()" onkeydown="if(event.key=='Enter')enterCode(this.value)" style="font-size:1.3em;flex:3"><button onclick="S.q='';draw(true);document.querySelector('#q').focus()">✕</button></div><div class=row>`+[['all','Todos'],['pend','Pendientes'],['in','Llegaron']].map(([k,t])=>`<button class="${S.f==k?'':'off'}" onclick="S.f='${k}';draw(true)">${t}</button>`).join('')+`<button onclick="scan()">📷 QR</button>`+(e?`<button class="${S.edit?'':'off'}" onclick="S.edit=!S.edit;draw(true)">${S.edit?'Terminar edición':'Editar lista'}</button>`:'')+`</div></div>`;
@@ -257,13 +263,11 @@ window.drawG=()=>{
 
 const cardG=x=>{const p=x.pax||1,c=x.inCount||0;
   if(!x.table&&p>1){
-    return `<div class="card ${c>=p?'in':c?'part':''}" style="flex-direction:column;align-items:stretch;gap:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span onclick="hG('${x.id}')" style="cursor:pointer"><b style="font-size:1.8em">${c}/${p}</b><br><small>${esc(x.name)}${x.notes?' · '+esc(x.notes):''}</small></span>
-        <span style="display:flex;gap:8px">
-          <button onclick="event.stopPropagation();qAdj('${x.id}',-1)" style="font-size:1.3em;padding:6px 18px">−</button>
-          <button onclick="event.stopPropagation();qAdj('${x.id}',1)" style="font-size:1.3em;padding:6px 18px">+</button>
-        </span>
+    return `<div class="card ${c>=p?'in':c?'part':''}" style="flex-direction:column;align-items:stretch;gap:12px">
+      <div onclick="hG('${x.id}')" style="cursor:pointer"><b style="font-size:1.8em">${c}/${p}</b><br><small>${esc(x.name)}${x.notes?' · '+esc(x.notes):''}</small></div>
+      <div style="display:flex;justify-content:space-between;gap:16px">
+        <button onclick="qAdj('${x.id}',-1)" style="flex:1;font-size:1.6em;font-weight:800;padding:14px 0;background:#c0392b">−</button>
+        <button onclick="qAdj('${x.id}',1)" style="flex:1;font-size:1.6em;font-weight:800;padding:14px 0;background:#1e824c">+</button>
       </div>
     </div>`;
   }
@@ -280,7 +284,11 @@ window.qAdj=async(id,d)=>{
   const x=S.guests.find(g=>g.id==id);if(!x)return;
   const p=x.pax||1,c=Math.max(0,Math.min(p,(x.inCount||0)+d));
   if(c==(x.inCount||0))return;
-  try{await updateDoc(gRef(id),{inCount:c,arrivedAt:c?Date.now():null,arrivedBy:c?S.name:null})}catch(e){alert('Error: sin conexión o sin permiso')}
+  const prev={inCount:x.inCount,arrivedAt:x.arrivedAt,arrivedBy:x.arrivedBy};
+  x.inCount=c;x.arrivedAt=c?Date.now():null;x.arrivedBy=c?S.name:null;
+  draw(true); // refresco inmediato: no depende de que el foco salga de un input
+  try{await updateDoc(gRef(id),{inCount:x.inCount,arrivedAt:x.arrivedAt,arrivedBy:x.arrivedBy})}
+  catch(e){Object.assign(x,prev);draw(true);alert('Error: sin conexión o sin permiso')}
 };
 window.closeM=()=>{S.m=null;$('#modal')?.remove()};
 window.showM=()=>{
