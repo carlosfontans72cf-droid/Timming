@@ -73,7 +73,7 @@ service cloud.firestore {
         allow create, update: if signed() && request.auth.uid == uid
           && exists(/databases/$(db)/documents/events/$(e)/codes/$(request.resource.data.code))
           && get(/databases/$(db)/documents/events/$(e)/codes/$(request.resource.data.code)).data.role == request.resource.data.role
-          && get(/databases/$(db)/documents/events/$(e)/codes/$(request.resource.data.code)).blocked != true;
+          && get(/databases/$(db)/documents/events/$(e)/codes/$(request.resource.data.code)).data.blocked != true;
         allow delete: if owner() || isSuperadmin();
       }
     }
