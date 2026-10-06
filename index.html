@@ -177,6 +177,15 @@ window.addGuest=()=>{
     if(S.guests.some(g=>dk(g)==norm(n)+'|'+norm(det)))return alert('Ese nombre con ese detalle ya existe.')}
   addDoc(colE('guests'),{name:n,det,table:'',notes:'',pax:1,inCount:0});
 };
+window.addCountGuest=()=>{
+  const raw=prompt('¿Cuántos invitados entran por acá? (sin nombre ni mesa, para contar llegadas)');
+  if(raw===null)return;
+  const p=parseInt(raw);if(!p||p<1)return alert('Poné un número mayor a 0.');
+  const lbl=(prompt('Etiqueta para identificar este grupo (ej. "Entrada general", "Puerta 2"):','Entrada general')||'').trim()||'Entrada general';
+  let name=lbl,i=2;
+  while(S.guests.some(g=>norm(g.name)==norm(name)))name=lbl+' '+(i++);
+  addDoc(colE('guests'),{name,det:'',table:'',notes:'',pax:p,inCount:0});
+};
 window.ug=(id,f,v)=>{
   const x=S.guests.find(g=>g.id==id),d=S.guests.find(g=>g.id!=id&&dk(g)==dk({...x,[f]:v}));
   if(d){alert(`Ya existe "${d.name}${d.det?' · '+d.det:''}" (Mesa ${d.table||'—'}). Agregá un detalle para diferenciarlos (ej. segundo apellido, parentesco).`);return drawG()}
@@ -214,7 +223,7 @@ function render(){
   }
   if(S.tab=='g'){
     h+=`<div class=sticky><div id=cnt></div><div class=row><input id=q autofocus placeholder="Buscar nombre o mesa..." value="${esc(S.q)}" oninput="S.q=this.value;drawG()" onkeydown="if(event.key=='Enter')enterCode(this.value)" style="font-size:1.3em;flex:3"><button onclick="S.q='';draw(true);document.querySelector('#q').focus()">✕</button></div><div class=row>`+[['all','Todos'],['pend','Pendientes'],['in','Llegaron']].map(([k,t])=>`<button class="${S.f==k?'':'off'}" onclick="S.f='${k}';draw(true)">${t}</button>`).join('')+`<button onclick="scan()">📷 QR</button>`+(e?`<button class="${S.edit?'':'off'}" onclick="S.edit=!S.edit;draw(true)">${S.edit?'Terminar edición':'Editar lista'}</button>`:'')+`</div></div>`;
-    if(e&&S.edit)h+=`<div class=row><button onclick="addGuest()">+ Invitado</button><button onclick="expCsv()">Exportar códigos</button><input type=file accept=".xlsx,.xls,.csv" onchange="impFile(this.files[0])"></div><div class=row><textarea id=paste rows=2 style="flex:1" placeholder="Pegá acá la lista (una línea por invitado: Nombre ; Mesa)"></textarea><button onclick="impText()">Importar</button></div>`;
+    if(e&&S.edit)h+=`<div class=row><button onclick="addGuest()">+ Invitado</button><button onclick="addCountGuest()">+ Conteo sin nombre</button><button onclick="expCsv()">Exportar códigos</button><input type=file accept=".xlsx,.xls,.csv" onchange="impFile(this.files[0])"></div><div class=row><textarea id=paste rows=2 style="flex:1" placeholder="Pegá acá la lista (una línea por invitado: Nombre ; Mesa)"></textarea><button onclick="impText()">Importar</button></div>`;
     h+=`<div id=gl></div>`;
   }
   if(S.tab=='th'){const T=themeOf();h+=`<div class=card><span>Botones y pestañas</span><input type=color value="${T.main}" onchange="setTheme('main',this.value)"></div><div class=card><span>Fondo (mejor claro)</span><input type=color value="${T.bg}" onchange="setTheme('bg',this.value)"></div><div class=card><span>Avisos, alertas y mesa</span><input type=color value="${T.alert}" onchange="setTheme('alert',this.value)"></div><div class=row><button class=off onclick="setEv('theme',{})">Restablecer colores</button></div>`}
@@ -246,7 +255,19 @@ window.drawG=()=>{
    :cardG(x)).join('');
 };
 
-const cardG=x=>{const p=x.pax||1,c=x.inCount||0;return `<div class="card ${c>=p?'in':c?'part':''}" onclick="hG('${x.id}')"><span><b>${esc(x.name)}</b>${x.det?` · ${esc(x.det)}`:''}${S.dups?.has(norm(x.name))&&!x.det?' ⚠ nombre repetido':''}<br><small>${p>1?p+' personas · ':''}${esc(x.notes)}</small></span><span><span class=mesa>Mesa ${esc(x.table)||'—'}</span><span class=chk>${c?`✔ ${c}/${p}`:'Marcar'}</span></span></div>`};
+const cardG=x=>{const p=x.pax||1,c=x.inCount||0;
+  if(!x.table&&p>1){
+    return `<div class="card ${c>=p?'in':c?'part':''}" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span onclick="hG('${x.id}')" style="cursor:pointer"><b style="font-size:1.8em">${c}/${p}</b><br><small>${esc(x.name)}${x.notes?' · '+esc(x.notes):''}</small></span>
+        <span style="display:flex;gap:8px">
+          <button onclick="event.stopPropagation();qAdj('${x.id}',-1)" style="font-size:1.3em;padding:6px 18px">−</button>
+          <button onclick="event.stopPropagation();qAdj('${x.id}',1)" style="font-size:1.3em;padding:6px 18px">+</button>
+        </span>
+      </div>
+    </div>`;
+  }
+  return `<div class="card ${c>=p?'in':c?'part':''}" onclick="hG('${x.id}')"><span><b>${esc(x.name)}</b>${x.det?` · ${esc(x.det)}`:''}${S.dups?.has(norm(x.name))&&!x.det?' ⚠ nombre repetido':''}<br><small>${p>1?p+' personas · ':''}${esc(x.notes)}</small></span><span><span class=mesa>Mesa ${esc(x.table)||'—'}</span><span class=chk>${c?`✔ ${c}/${p}`:'Marcar'}</span></span></div>`};
 const cnt=()=>[S.guests.reduce((s,x)=>s+(x.inCount||0),0),S.guests.reduce((s,x)=>s+(x.pax||1),0)];
 const gRef=id=>doc(db,'events',S.eid,'guests',id);
 window.hG=(id,scan)=>{const x=S.guests.find(g=>g.id==id);if(!x)return;const c=x.inCount||0,p=x.pax||1;if(p==1&&!c&&!scan)return go(id,1);S.m={id,n:c||p,scan:!!scan};showM()};
@@ -255,6 +276,12 @@ window.go=async(id,n)=>{try{
   if(dup){S.m=S.m||{id,n,scan:false};S.m.id=id;showM();beep()}else{const sc=S.m?.scan;closeM();if(sc)scan()}
 }catch(e){alert('Error: sin conexión o sin permiso')}};
 window.setN=async(id,n)=>{if(n==0&&!confirm('¿Marcar como NO llegó?'))return;await updateDoc(gRef(id),{inCount:n,arrivedAt:n?Date.now():null,arrivedBy:n?S.name:null});closeM()};
+window.qAdj=async(id,d)=>{
+  const x=S.guests.find(g=>g.id==id);if(!x)return;
+  const p=x.pax||1,c=Math.max(0,Math.min(p,(x.inCount||0)+d));
+  if(c==(x.inCount||0))return;
+  try{await updateDoc(gRef(id),{inCount:c,arrivedAt:c?Date.now():null,arrivedBy:c?S.name:null})}catch(e){alert('Error: sin conexión o sin permiso')}
+};
 window.closeM=()=>{S.m=null;$('#modal')?.remove()};
 window.showM=()=>{
   const m=S.m,x=S.guests.find(g=>g.id==m.id);if(!x)return closeM();
