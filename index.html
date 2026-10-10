@@ -17,6 +17,8 @@ button{background:#222;color:#fff;border:0;cursor:pointer}
 .part{background:#fcf3cf}.red{background:#c0392b}.past{opacity:.65}
 #modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:50}
 .mc{background:#fff;border-radius:14px;padding:18px;width:min(92vw,380px);text-align:center;display:grid;gap:8px}
+.mc.terms{width:min(92vw,620px);max-height:85vh;overflow-y:auto;text-align:left}
+.mc.terms h4{margin:14px 0 2px}.mc.terms p{margin:2px 0;font-size:.92em;line-height:1.4}
 .warn{background:#c0392b;color:#fff;padding:10px;border-radius:8px;font-weight:700}
 #scn{position:fixed;inset:0;background:#000;z-index:60}#scn video{width:100%;height:100%;object-fit:cover}#scn button{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);font-size:1.1em}
 #alr{position:fixed;inset:0;background:#c0392b;color:#fff;z-index:100;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:30px;text-align:center;padding:20px;animation:bl 1s infinite}
@@ -62,8 +64,37 @@ onAuthStateChanged(auth,async u=>{
 
 function login(){clean();const msg=S.msg||'';S.msg='';
   const q=new URLSearchParams(location.search),u=q.get('e')||'',nn=q.get('n')||'';history.replaceState(null,'',location.pathname);
-  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><button class=off id=owb onclick="showOwner()">Soy dueño o superadmin</button><div id=ow style="display:grid;gap:8px"></div><p id=err>${esc(msg)}</p></div>`;
+  $('#app').innerHTML=`<div class=box><h2>Eventos</h2><small>Evento</small><input id=evn placeholder="Nombre del evento" value="${esc(u)}"><small>Tu nombre y apellido</small><input id=code placeholder="Nombre y apellido" value="${esc(nn)}"><small>Código de 6 dígitos</small><input id=pin type=password inputmode=numeric maxlength=6 autocomplete=off placeholder="••••••"><button onclick="joinCode()">Entrar</button><hr><button class=off id=owb onclick="showOwner()">Soy dueño o superadmin</button><div id=ow style="display:grid;gap:8px"></div><p id=err>${esc(msg)}</p><p style="text-align:center;margin:4px 0"><a href="#" onclick="showTerms();return false" style="font-size:.8em;color:#666">Términos y Condiciones y Política de Privacidad</a></p></div>`;
 }
+window.showTerms=()=>{
+  let d=$('#modal');if(!d){d=document.createElement('div');d.id='modal';document.body.append(d)}
+  d.innerHTML=`<div class="mc terms"><h2 style="text-align:center">Términos y Condiciones y Política de Privacidad</h2><small style="display:block;text-align:center;color:#666">Última actualización: 10/10/2026</small>
+  <h4>Introducción</h4><p>Timming es una aplicación web de gestión de eventos (cronograma, invitados y control de ingreso por código QR), ofrecida por <b>Carlos Fontans</b> ("el Proveedor"). Intervienen tres roles: el Proveedor (quien opera la app), el Organizador (Dueño o Superadmin, quien contrata el uso de Timming y carga los datos de sus invitados) y los Invitados y personal del evento, cuyos datos carga el Organizador para el check-in.</p>
+  <h4>Términos y Condiciones</h4>
+  <p><b>1. Aceptación.</b> Al crear una cuenta o usar Timming aceptás estos Términos.</p>
+  <p><b>2. El servicio.</b> Timming se brinda "tal cual", sin garantía de funcionamiento ininterrumpido o libre de errores. El Proveedor puede modificar, suspender o discontinuar funciones con aviso razonable cuando sea posible.</p>
+  <p><b>3. Cuentas y accesos.</b> El Organizador es responsable de la confidencialidad de su email/contraseña y de los códigos de acceso que genera y comparte. Puede bloquear o eliminar accesos manualmente en cualquier momento. Borrar un evento elimina en forma permanente todo lo cargado en él (cronograma, invitados, códigos); el acceso de Superadmin es independiente y no se borra al eliminar un evento. El Proveedor no se responsabiliza por accesos compartidos, perdidos o bloqueados por error del propio Organizador.</p>
+  <p><b>4. Responsabilidad sobre los datos cargados.</b> El Organizador es el único responsable de contar con autorización para cargar los datos de invitados y personal, y de que esa información sea correcta y legal. El Proveedor actúa como encargado técnico del almacenamiento, no como responsable de su contenido.</p>
+  <p><b>5. Uso aceptable.</b> No está permitido cargar datos falsos con fines de fraude, acosar o vulnerar la privacidad de terceros, ni intentar vulnerar la seguridad de la aplicación.</p>
+  <p><b>6. Limitación de responsabilidad.</b> En la máxima medida permitida por la ley, el Proveedor no será responsable por daños indirectos, pérdida de datos, interrupciones del servicio, fallas de terceros (Firebase/Google, WhatsApp) ni por decisiones tomadas por el Organizador en base a la información del sistema.</p>
+  <p><b>7. Precio y pagos.</b> El uso de Timming tiene un costo para el Organizador. El valor no es fijo: se acuerda de manera particular con cada Organizador. La forma y frecuencia de pago se establecen en cada caso antes de habilitar el acceso.</p>
+  <p><b>8. Baja del servicio.</b> El Organizador puede dejar de usar Timming cuando quiera. El Proveedor puede suspender o cancelar una cuenta ante uso indebido o incumplimiento de estos Términos.</p>
+  <p><b>9. Propiedad.</b> El software, marca y diseño de Timming pertenecen al Proveedor. El Organizador conserva la propiedad de los datos que carga.</p>
+  <p><b>10. Cambios.</b> El Proveedor puede actualizar estos Términos. El uso continuado de la app después de un cambio implica su aceptación.</p>
+  <p><b>11. Ley aplicable.</b> Estos Términos se rigen por las leyes de la República Argentina, con sometimiento a la jurisdicción correspondiente al domicilio del Proveedor.</p>
+  <h4>Política de Privacidad</h4>
+  <p><b>1. Responsables del tratamiento.</b> Para cada evento, el Organizador decide qué datos cargar y es el responsable primario frente a los titulares. El Proveedor actúa como encargado del tratamiento, alojando los datos en Google Firebase.</p>
+  <p><b>2. Qué datos se recolectan.</b> Del Organizador/Superadmin: nombre, email y contraseña. De los invitados: nombre, mesa, cantidad de personas y, según el evento, teléfono/WhatsApp o email. Del personal del evento: nombre y código de acceso. Si el evento lo usa: fotos para el control de ingreso por QR.</p>
+  <p><b>3. Para qué se usan.</b> Exclusivamente para organizar el cronograma y controlar el ingreso/conteo de invitados. No se usan para publicidad ni se venden a terceros.</p>
+  <p><b>4. Dónde se almacenan.</b> En servidores de Google Firebase, que pueden estar fuera de la Argentina. Al usar Timming se acepta esta transferencia internacional, necesaria para el servicio.</p>
+  <p><b>5. Conservación.</b> Los datos de un evento quedan disponibles mientras el Organizador no lo borre; al borrarlo se eliminan de forma permanente e inmediata.</p>
+  <p><b>6. Seguridad.</b> El acceso está protegido por autenticación y reglas de permisos que limitan qué puede ver o modificar cada rol. Ante cualquier incidente de seguridad relevante se informará a los Organizadores afectados.</p>
+  <p><b>7. Derechos de los titulares (Ley 25.326, Argentina).</b> Toda persona cuyos datos estén cargados tiene derecho a acceder, rectificar o solicitar la eliminación de sus datos. Las solicitudes se dirigen en primer lugar al Organizador del evento; si no es posible contactarlo, a carlosfontans72.cf@gmail.com. La Agencia de Acceso a la Información Pública es la autoridad de control de la Ley 25.326.</p>
+  <p><b>8. Menores de edad.</b> Si un evento incluye datos de menores, es responsabilidad del Organizador contar con la autorización de sus padres/tutores.</p>
+  <p><b>9. Cambios.</b> Esta Política puede actualizarse; la fecha de la última actualización figura arriba.</p>
+  <p><b>10. Contacto.</b> Ante dudas, escribir a carlosfontans72.cf@gmail.com.</p>
+  <button class=off onclick="closeM()">Cerrar</button></div>`;
+};
 const sl=s=>norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 window.showOwner=()=>{document.querySelector('#owb').remove();document.querySelector('#ow').innerHTML=`<small>Dueño o superadmin</small><input id=em type=email autocomplete=off placeholder=Email><input id=pw type=password autocomplete=new-password placeholder=Contraseña><label style="font-size:.85em"><input type=checkbox onchange="document.querySelector('#pw').type=this.checked?'text':'password'"> Mostrar contraseña</label><button onclick="ownerLogin()">Entrar con email</button><button class=off onclick="resetPw()">Olvidé mi contraseña</button>`};
 window.ownerLogin=async()=>{
