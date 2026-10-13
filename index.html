@@ -39,13 +39,15 @@ const firebaseConfig={apiKey:"AIzaSyD1te6RssbCBSrtpNisansqa-fGjwQBrxM",authDomai
 const APP_URL='https://timming-zeta.vercel.app';
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
 const $=s=>document.querySelector(s);
-const S=window.S={tab:'plan',f:'all',plan:'',plans:[],items:[],guests:[],codes:[],events:[],unsubs:[],fired:new Set(),q:''};
+const S=window.S={tab:'plan',f:'all',plan:'',plans:[],items:[],guests:[],codes:[],events:[],unsubs:[],fired:new Set(),q:'',menu:[],sections:['plan','g','menu']};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const canEdit=()=>S.owner||S.sup||S.role=='A';
+const canSee=k=>S.owner||S.sup||S.role=='A'||(S.sections||['plan','g','menu']).includes(k);
+const SECLBL={plan:'Cronograma',g:'Invitados',menu:'Degustación/Menú'};
 window.addEventListener('unhandledrejection',ev=>{if(ev.reason?.code=='permission-denied')alert('Sin permiso (permission-denied): las reglas de Firebase no están actualizadas o tu rol no permite esta acción.')});
 const evDoc=()=>doc(db,'events',S.eid);
 const colE=c=>collection(db,'events',S.eid,c);
-const clean=()=>{S.unsubs.forEach(f=>f());S.unsubs=[];S.ev=null;S.items=[];S.guests=[];S.codes=[];S.plans=[];applyTheme()};
+const clean=()=>{S.unsubs.forEach(f=>f());S.unsubs=[];S.ev=null;S.items=[];S.guests=[];S.codes=[];S.plans=[];S.menu=[];S.catalog=[];applyTheme()};
 
 onAuthStateChanged(auth,async u=>{
   if(S.joining)return;
@@ -58,7 +60,7 @@ onAuthStateChanged(auth,async u=>{
     if(!S.msg)S.msg='Ese usuario no tiene permisos de dueño ni de superadmin.';
     await signOut(auth);return}
   const eid=localStorage.eid;
-  if(eid&&!new URLSearchParams(location.search).get('e')){try{const m=await getDoc(doc(db,'events',eid,'members',u.uid));if(m.exists()){S.role=m.data().role;S.name=m.data().name||'Sin nombre';return openEvent(eid);}}catch(e){}}
+  if(eid&&!new URLSearchParams(location.search).get('e')){try{const m=await getDoc(doc(db,'events',eid,'members',u.uid));if(m.exists()){S.role=m.data().role;S.name=m.data().name||'Sin nombre';S.sections=m.data().sections||['plan','g','menu'];return openEvent(eid);}}catch(e){}}
   login();
 });
 
@@ -116,8 +118,8 @@ window.resetSup=async id=>{
 window.joinCode=async()=>{
   const code=sl($('#evn').value)+'-'+sl($('#code').value)+'-'+$('#pin').value.replace(/\D/g,'');let eid,role;
   try{S.joining=true;if(!auth.currentUser)await signInAnonymously(auth);
-    const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;if(j.data().blocked){S.joining=false;$('#err').textContent='Acceso bloqueado. Consultá con el organizador.';return}({eid,role}=j.data());S.name=j.data().label||'Sin nombre';await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name});
-    localStorage.eid=eid;S.joining=false;S.owner=false;S.role=role;openEvent(eid);
+    const u=auth.currentUser;const j=await getDoc(doc(db,'joins',code));if(!j.exists())throw 0;if(j.data().blocked){S.joining=false;$('#err').textContent='Acceso bloqueado. Consultá con el organizador.';return}({eid,role}=j.data());S.name=j.data().label||'Sin nombre';const sections=j.data().sections||['plan','g','menu'];await setDoc(doc(db,'events',eid,'members',u.uid),{code,role,name:S.name,sections});
+    localStorage.eid=eid;S.joining=false;S.owner=false;S.role=role;S.sections=sections;openEvent(eid);
   }catch(e){S.joining=false;$('#err').textContent=e===0?'No existe ese acceso. Busqué evento "'+sl($('#evn').value)+'" + nombre "'+sl($('#code').value)+'" + ese código. Revisá que coincidan con los del acceso (en Accesos, tocá el código para verlo).':e.code=='permission-denied'?'Sin permiso (permission-denied). Avisale al organizador: puede ser que las reglas de Firebase estén desactualizadas o que el acceso esté bloqueado.':'No se pudo entrar: '+(e.code||e.message)}
 };
 window.back=async()=>{if(S.owner||S.sup)return listEvents();localStorage.removeItem('eid');await signOut(auth)};
@@ -146,11 +148,13 @@ window.newEv=async()=>{
 };
 
 window.openEvent=eid=>{
-  clean();S.eid=eid;S.tab='plan';S.plan='';S.q='';S.edit=false;S.f='all';S.alert='';closeM();wl();
+  clean();S.eid=eid;S.tab=canSee('plan')?'plan':canSee('g')?'g':canSee('menu')?'menu':'plan';S.plan='';S.q='';S.edit=false;S.f='all';S.alert='';closeM();wl();
   S.unsubs.push(onSnapshot(evDoc(),s=>{S.ev=s.data();applyTheme();draw()},()=>{if(!S.owner&&!S.sup){alert('Tu acceso fue bloqueado o el evento terminó.');localStorage.removeItem('eid');signOut(auth)}}));
-  S.unsubs.push(onSnapshot(colE('items'),s=>{S.items=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
-  S.unsubs.push(onSnapshot(colE('guests'),s=>{S.guests=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
-  S.unsubs.push(onSnapshot(colE('plans'),s=>{S.plans=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.ord||0)-(b.ord||0));draw()}));
+  if(canSee('plan'))S.unsubs.push(onSnapshot(colE('items'),s=>{S.items=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
+  if(canSee('g'))S.unsubs.push(onSnapshot(colE('guests'),s=>{S.guests=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
+  if(canSee('plan'))S.unsubs.push(onSnapshot(colE('plans'),s=>{S.plans=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.ord||0)-(b.ord||0));draw()}));
+  if(canSee('menu'))S.unsubs.push(onSnapshot(colE('menu'),s=>{S.menu=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.ord||0)-(b.ord||0));draw()}));
+  if(canSee('menu'))S.unsubs.push(onSnapshot(collection(db,'menuCatalog'),s=>{S.catalog=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
   if(S.owner||S.sup)S.unsubs.push(onSnapshot(colE('codes'),s=>{S.codes=s.docs.map(d=>({id:d.id,...d.data()}));draw()}));
 };
 
@@ -246,7 +250,9 @@ function render(){
   let h=`<div class=top><button onclick="back()">${S.owner||S.sup?'← Eventos':'Salir'}</button><small>👤 ${S.owner?'Dueño':esc(S.name||'')+' · '+(S.sup?'Superadmin':S.role=='A'?'Admin':'Funcionario')}</small>`+
    (e?`<input class=big value="${esc(ev.name)}" onchange="setEv('name',this.value)"><input type=date value="${ev.date||''}" onchange="setEv('date',this.value)"><small>Desde</small><input type=time title="Hora de comienzo (opcional)" value="${ev.start||''}" onchange="setEv('start',this.value)"><small>Hasta</small><input type=time title="Hora de fin (opcional)" value="${ev.end||''}" onchange="setEv('end',this.value)">`:`<span class=big>${esc(ev.name)}</span>${ev.start?`<small>${esc(ev.start)}${ev.end?' – '+esc(ev.end):''}</small>`:''}`)+
    `${e?`<button onclick="xlsEv(S.eid)">📊</button><button onclick="waEv(S.eid)">📲</button>`:''}</div><div id=banner onclick="clearAlert()">${esc(S.alert||'')}</div><div id=next></div><div class=tabs>`+
-   `<button class="${S.tab=='plan'?'on':''}" onclick="tab('plan')">Cronograma</button><button class="${S.tab=='g'?'on':''}" onclick="tab('g')">Invitados ${cnt().join('/')}</button>`+
+   (canSee('plan')?`<button class="${S.tab=='plan'?'on':''}" onclick="tab('plan')">Cronograma</button>`:'')+
+   (canSee('g')?`<button class="${S.tab=='g'?'on':''}" onclick="tab('g')">Invitados ${cnt().join('/')}</button>`:'')+
+   (canSee('menu')?`<button class="${S.tab=='menu'?'on':''}" onclick="tab('menu')">🍽 Menú</button>`:'')+
    (S.owner||S.sup?`<button class="${S.tab=='acc'?'on':''}" onclick="tab('acc')">Accesos</button>`:'')+(S.owner?`<button class="${S.tab=='th'?'on':''}" onclick="tab('th')">🎨 Colores</button>`:'')+`</div><section>`;
   if(S.tab=='plan'){
     h+=`<div class=row>`+[{id:'',name:'General'},...S.plans].map(p=>`<button class="${S.plan==p.id?'':'off'}" onclick="S.plan='${p.id}';draw(true)">${esc(p.name)}</button>`).join('')+(e?`<button onclick="addPlan()">+ Cronograma</button>`:'')+`</div>`;
@@ -264,10 +270,30 @@ function render(){
     if(e&&S.edit)h+=`<div class=row><button onclick="addGuest()">+ Invitado</button><button onclick="addCountGuest()">+ Conteo sin nombre</button><button onclick="expCsv()">Exportar códigos</button><input type=file accept=".xlsx,.xls,.csv" onchange="impFile(this.files[0])"></div><div class=row><textarea id=paste rows=2 style="flex:1" placeholder="Pegá acá la lista (una línea por invitado: Nombre ; Mesa)"></textarea><button onclick="impText()">Importar</button></div>`;
     h+=`<div id=gl></div>`;
   }
+  if(S.tab=='menu'){
+    const cats=[...new Set(['Comida','Postres','Tragos',...S.catalog.map(x=>x.cat).filter(Boolean)])];
+    const menuById={};S.menu.forEach(m=>menuById[m.id]=m);
+    if(e){
+      h+=`<datalist id=mcats>`+cats.map(c=>`<option value="${esc(c)}">`).join('')+`</datalist>`;
+      h+=`<div class=row><input id=mcat list=mcats placeholder="Categoría (ej. Postres)" style="max-width:160px"><input id=mname placeholder="Nueva opción (ej. Tiramisú)"><button onclick="addCatalogItem()">+ Agregar al catálogo</button></div>`;
+      h+=`<div class=row><button onclick="sendMenu()">📲 Enviar elegidos por WhatsApp</button></div>`;
+    }
+    const rows=e?S.catalog:S.catalog.filter(c=>(menuById[c.id]?.qty||0)>0);
+    if(!rows.length)h+=`<p style="padding:14px;color:#666">${e?'Todavía no cargaste opciones en el catálogo.':'Todavía no se cargó el menú elegido.'}</p>`;
+    let cur='';
+    [...rows].sort((a,b)=>(a.cat||'').localeCompare(b.cat||'')||(a.name||'').localeCompare(b.name||'')).forEach(c=>{
+      const cat=c.cat||'Sin categoría';if(cat!=cur){cur=cat;h+=`<div style="font-weight:700;padding:10px 2px 2px;color:#555">${esc(cat)}</div>`}
+      const m=menuById[c.id]||{},cn=esc(c.name).replace(/'/g,"\\'"),ct=esc(cat).replace(/'/g,"\\'");
+      h+=e?`<div class=row><span style="flex:2">${esc(c.name)}</span><input type=number min=0 style="max-width:80px" placeholder=Cant. value="${m.qty||''}" onchange="setMenuQty('${c.id}','${ct}','${cn}',this.value)"><input placeholder=Nota value="${esc(m.note||'')}" onchange="setMenuNote('${c.id}','${ct}','${cn}',this.value)"><button class=off title="Borrar del catálogo (todos los eventos futuros)" onclick="delCatalogItem('${c.id}')">🗑 catálogo</button></div>`
+        :`<div class="row r"><b>${esc(c.name)}</b> × ${m.qty||0}${m.note?`<small>${esc(m.note)}</small>`:''}</div>`;
+    });
+  }
   if(S.tab=='th'){const T=themeOf();h+=`<div class=card><span>Botones y pestañas</span><input type=color value="${T.main}" onchange="setTheme('main',this.value)"></div><div class=card><span>Fondo (mejor claro)</span><input type=color value="${T.bg}" onchange="setTheme('bg',this.value)"></div><div class=card><span>Avisos, alertas y mesa</span><input type=color value="${T.alert}" onchange="setTheme('alert',this.value)"></div><div class=row><button class=off onclick="setEv('theme',{})">Restablecer colores</button></div>`}
   if(S.tab=='acc'){
-    h+=`<div class=row><input id=lb placeholder="Nombre"><input id=ap placeholder="Apellido"><select id=rl><option value=S>Funcionario (solo ve)</option><option value=A>Admin (edita)</option></select><button onclick="mk()">Crear código</button></div><div class=row><button class=off onclick="blkAll(true)">🔒 Bloquear todos</button><button class=off onclick="blkAll(false)">🔓 Activar todos</button><button class=off onclick="fixCodes()">🔧 Verificar y reparar accesos</button></div>`+
-    S.codes.map(c=>`<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}${c.blocked?' · 🔒 BLOQUEADO':''}<br><small>Evento: ${esc(c.evn||ev.name)} · Código: <b data-c="${esc(c.id.slice(c.id.lastIndexOf('-')+1))}" onclick="this.textContent=this.dataset.c" style="cursor:pointer">•••••• (tocá para ver)</b></small></span><span><a href="https://wa.me/?text=${encodeURIComponent('*'+(c.evn||ev.name)+'*\nHola '+c.label+', este es tu acceso como '+(c.role=='A'?'admin':'funcionario')+':\n'+APP_URL+'/?e='+encodeURIComponent(c.evn||ev.name)+'&n='+encodeURIComponent(c.label)+'\n\nTu código de 6 dígitos: '+c.id.slice(c.id.lastIndexOf('-')+1))}" target=_blank>WhatsApp</a> <button class=off onclick="blkCode('${c.id}',${!c.blocked})">${c.blocked?'🔓 Activar':'🔒 Bloquear'}</button> <button onclick="delCode('${c.id}')">✕</button></span></div>`).join('');
+    h+=`<div class=row><input id=lb placeholder="Nombre"><input id=ap placeholder="Apellido"><select id=rl onchange="document.querySelector('#secs').style.display=this.value=='A'?'none':'flex'"><option value=S>Funcionario (solo ve)</option><option value=A>Admin (edita)</option></select></div>`+
+    `<div class=row id=secs><small>Puede ver:</small>`+Object.entries(SECLBL).map(([k,lbl])=>`<label style="font-size:.85em"><input type=checkbox class=mksec value="${k}" checked> ${lbl}</label>`).join('')+`</div>`+
+    `<div class=row><button onclick="mk()">Crear código</button></div><div class=row><button class=off onclick="blkAll(true)">🔒 Bloquear todos</button><button class=off onclick="blkAll(false)">🔓 Activar todos</button><button class=off onclick="fixCodes()">🔧 Verificar y reparar accesos</button></div>`+
+    S.codes.map(c=>{const secs=c.role=='A'?null:(c.sections||['plan','g','menu']);return `<div class=card><span>${esc(c.label)} · ${c.role=='A'?'Admin':'Funcionario'}${c.blocked?' · 🔒 BLOQUEADO':''}<br><small>Evento: ${esc(c.evn||ev.name)} · Código: <b data-c="${esc(c.id.slice(c.id.lastIndexOf('-')+1))}" onclick="this.textContent=this.dataset.c" style="cursor:pointer">•••••• (tocá para ver)</b></small>${secs?`<br><small>Ve: ${secs.map(k=>SECLBL[k]).join(', ')||'nada'}</small>`:''}</span><span><a href="https://wa.me/?text=${encodeURIComponent('*'+(c.evn||ev.name)+'*\nHola '+c.label+', este es tu acceso como '+(c.role=='A'?'admin':'funcionario')+':\n'+APP_URL+'/?e='+encodeURIComponent(c.evn||ev.name)+'&n='+encodeURIComponent(c.label)+'\n\nTu código de 6 dígitos: '+c.id.slice(c.id.lastIndexOf('-')+1))}" target=_blank>WhatsApp</a> ${secs?`<button class=off onclick="editSections('${c.id}')">✏️ Permisos</button>`:''} <button class=off onclick="blkCode('${c.id}',${!c.blocked})">${c.blocked?'🔓 Activar':'🔒 Bloquear'}</button> <button onclick="delCode('${c.id}')">✕</button></span></div>`}).join('');
   }
   $('#app').innerHTML=h+'</section>';
   if(S.tab=='g')drawG();
@@ -382,6 +408,35 @@ window.delEv=async eid=>{
   await deleteDoc(doc(db,'events',eid));
 };
 window.addPlan=()=>{const n=prompt('Nombre del cronograma (ej. Catering, Fotógrafo, Música)');if(n)addDoc(colE('plans'),{name:n,ord:Date.now()})};
+window.addCatalogItem=()=>{
+  const cat=$('#mcat').value.trim(),name=$('#mname').value.trim();
+  if(!name)return alert('Poné el nombre de la opción (ej. plato, postre o trago)');
+  if(S.catalog.some(c=>norm(c.cat)==norm(cat)&&norm(c.name)==norm(name)))return alert('Esa opción ya existe en el catálogo.');
+  addDoc(collection(db,'menuCatalog'),{cat,name});
+  $('#mname').value='';
+};
+window.delCatalogItem=id=>{
+  if(!confirm('¿Borrar esta opción del catálogo? No va a aparecer más para eventos nuevos (los eventos que ya la tenían cargada la conservan).'))return;
+  deleteDoc(doc(db,'menuCatalog',id));
+};
+window.setMenuQty=(id,cat,name,v)=>{
+  const q=parseInt(v)||0;
+  if(q<=0)return deleteDoc(doc(db,'events',S.eid,'menu',id)).catch(()=>{});
+  setDoc(doc(db,'events',S.eid,'menu',id),{cat,name,qty:q},{merge:true});
+};
+window.setMenuNote=(id,cat,name,v)=>{
+  setDoc(doc(db,'events',S.eid,'menu',id),{cat,name,note:v.trim()},{merge:true});
+};
+window.sendMenu=()=>{
+  const chosen=S.menu.filter(x=>(x.qty||0)>0);
+  if(!chosen.length)return alert('Todavía no cargaste cantidades para ninguna opción.');
+  let t=`*Menú elegido — ${S.ev.name}*\n`,cur='';
+  [...chosen].sort((a,b)=>(a.cat||'').localeCompare(b.cat||'')).forEach(x=>{
+    const c=x.cat||'Sin categoría';if(c!=cur){cur=c;t+=`\n_${c}_\n`}
+    t+=`- ${x.name} × ${x.qty}${x.note?' ('+x.note+')':''}\n`;
+  });
+  waSend(t);
+};
 window.renPlan=(id,v)=>updateDoc(doc(db,'events',S.eid,'plans',id),{name:v});
 window.delPlan=async id=>{if(!confirm('¿Eliminar este cronograma y sus momentos?'))return;const b=writeBatch(db);S.items.filter(i=>i.plan==id).forEach(i=>b.delete(doc(db,'events',S.eid,'items',i.id)));b.delete(doc(db,'events',S.eid,'plans',id));await b.commit();S.plan='';draw(true)};
 window.delCode=async id=>{

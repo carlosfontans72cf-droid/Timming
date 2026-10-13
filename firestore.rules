@@ -37,6 +37,11 @@ service cloud.firestore {
       allow write: if owner();
     }
 
+    match /menuCatalog/{id} {
+      allow read: if signed();
+      allow create, update, delete: if owner() || isSuperadmin();
+    }
+
     match /joins/{code} {
       allow get: if signed();
       allow list: if false;
@@ -55,6 +60,10 @@ service cloud.firestore {
         allow create, update, delete: if admin(e);
       }
       match /plans/{id} {
+        allow read: if see(e);
+        allow create, update, delete: if admin(e);
+      }
+      match /menu/{id} {
         allow read: if see(e);
         allow create, update, delete: if admin(e);
       }
