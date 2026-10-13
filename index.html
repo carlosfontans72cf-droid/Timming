@@ -43,7 +43,7 @@ const S=window.S={tab:'plan',f:'all',plan:'',plans:[],items:[],guests:[],codes:[
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const canEdit=()=>S.owner||S.sup||S.role=='A';
 const canSee=k=>S.owner||S.sup||S.role=='A'||(S.sections||['plan','g','menu']).includes(k);
-const SECLBL={plan:'Cronograma',g:'Invitados',menu:'Degustación/Menú'};
+const SECLBL={plan:'Cronograma',g:'Invitados',menu:'Tasting'};
 window.addEventListener('unhandledrejection',ev=>{if(ev.reason?.code=='permission-denied')alert('Sin permiso (permission-denied): las reglas de Firebase no están actualizadas o tu rol no permite esta acción.')});
 const evDoc=()=>doc(db,'events',S.eid);
 const colE=c=>collection(db,'events',S.eid,c);
@@ -252,7 +252,7 @@ function render(){
    `${e?`<button onclick="xlsEv(S.eid)">📊</button><button onclick="waEv(S.eid)">📲</button>`:''}</div><div id=banner onclick="clearAlert()">${esc(S.alert||'')}</div><div id=next></div><div class=tabs>`+
    (canSee('plan')?`<button class="${S.tab=='plan'?'on':''}" onclick="tab('plan')">Cronograma</button>`:'')+
    (canSee('g')?`<button class="${S.tab=='g'?'on':''}" onclick="tab('g')">Invitados ${cnt().join('/')}</button>`:'')+
-   (canSee('menu')?`<button class="${S.tab=='menu'?'on':''}" onclick="tab('menu')">🍽 Menú</button>`:'')+
+   (canSee('menu')?`<button class="${S.tab=='menu'?'on':''}" onclick="tab('menu')">🍽 Tasting</button>`:'')+
    (S.owner||S.sup?`<button class="${S.tab=='acc'?'on':''}" onclick="tab('acc')">Accesos</button>`:'')+(S.owner?`<button class="${S.tab=='th'?'on':''}" onclick="tab('th')">🎨 Colores</button>`:'')+`</div><section>`;
   if(S.tab=='plan'){
     h+=`<div class=row>`+[{id:'',name:'General'},...S.plans].map(p=>`<button class="${S.plan==p.id?'':'off'}" onclick="S.plan='${p.id}';draw(true)">${esc(p.name)}</button>`).join('')+(e?`<button onclick="addPlan()">+ Cronograma</button>`:'')+`</div>`;
@@ -279,7 +279,7 @@ function render(){
       h+=`<div class=row><button onclick="sendMenu()">📲 Enviar elegidos por WhatsApp</button></div>`;
     }
     const rows=e?S.catalog:S.catalog.filter(c=>(menuById[c.id]?.qty||0)>0);
-    if(!rows.length)h+=`<p style="padding:14px;color:#666">${e?'Todavía no cargaste opciones en el catálogo.':'Todavía no se cargó el menú elegido.'}</p>`;
+    if(!rows.length)h+=`<p style="padding:14px;color:#666">${e?'Todavía no cargaste opciones en el catálogo.':'Todavía no se cargó el tasting elegido.'}</p>`;
     let cur='';
     [...rows].sort((a,b)=>(a.cat||'').localeCompare(b.cat||'')||(a.name||'').localeCompare(b.name||'')).forEach(c=>{
       const cat=c.cat||'Sin categoría';if(cat!=cur){cur=cat;h+=`<div style="font-weight:700;padding:10px 2px 2px;color:#555">${esc(cat)}</div>`}
@@ -430,7 +430,7 @@ window.setMenuNote=(id,cat,name,v)=>{
 window.sendMenu=()=>{
   const chosen=S.menu.filter(x=>(x.qty||0)>0);
   if(!chosen.length)return alert('Todavía no cargaste cantidades para ninguna opción.');
-  let t=`*Menú elegido — ${S.ev.name}*\n`,cur='';
+  let t=`*Tasting elegido — ${S.ev.name}*\n`,cur='';
   [...chosen].sort((a,b)=>(a.cat||'').localeCompare(b.cat||'')).forEach(x=>{
     const c=x.cat||'Sin categoría';if(c!=cur){cur=c;t+=`\n_${c}_\n`}
     t+=`- ${x.name} × ${x.qty}${x.note?' ('+x.note+')':''}\n`;
