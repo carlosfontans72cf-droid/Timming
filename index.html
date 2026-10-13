@@ -412,7 +412,7 @@ window.addCatalogItem=()=>{
   const cat=$('#mcat').value.trim(),name=$('#mname').value.trim();
   if(!name)return alert('Poné el nombre de la opción (ej. plato, postre o trago)');
   if(S.catalog.some(c=>norm(c.cat)==norm(cat)&&norm(c.name)==norm(name)))return alert('Esa opción ya existe en el catálogo.');
-  addDoc(collection(db,'menuCatalog'),{cat,name});
+  addDoc(collection(db,'menuCatalog'),{cat,name,srcEvent:S.eid});
   $('#mname').value='';
 };
 window.delCatalogItem=id=>{

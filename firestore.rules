@@ -39,7 +39,12 @@ service cloud.firestore {
 
     match /menuCatalog/{id} {
       allow read: if signed();
-      allow create, update, delete: if owner() || isSuperadmin();
+      // Cualquier admin de un evento puede agregar opciones nuevas al
+      // catálogo compartido (probando su rol de admin en el evento desde
+      // el que agrega, vía srcEvent), pero solo el dueño o un superadmin
+      // puede editarlas o borrarlas.
+      allow create: if owner() || isSuperadmin() || admin(request.resource.data.srcEvent);
+      allow update, delete: if owner() || isSuperadmin();
     }
 
     match /joins/{code} {
